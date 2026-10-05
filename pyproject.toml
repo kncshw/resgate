@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tempx"
+version = "0.1.0"
+description = "Search-free, reference-free rank-1 abliteration: five prompts, one weight edit, sep(l) per-layer weighting."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "AGPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "tempx contributors" }]
+keywords = ["abliteration", "refusal-direction", "interpretability", "safety-research", "red-teaming"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+# Lower bounds only. The pipeline reads safetensors headers directly and uses
+# output_hidden_states, both long-stable APIs, so an upper pin would cost more than it buys.
+dependencies = [
+    "torch>=2.1",
+    "transformers>=4.45",
+    "safetensors>=0.4",
+]
+
+[project.optional-dependencies]
+# eval/judge_threeway.py talks to an OpenAI-compatible endpoint over HTTP.
+# eval/keyword_rate.py and eval/kl.py need nothing beyond the core deps.
+eval = ["requests>=2.28"]
+# `tempx capture --devmap auto` needs accelerate to shard a model across devices.
+shard = ["accelerate>=0.26"]
+
+[project.scripts]
+tempx = "tempx.cli:main"
+
+[tool.setuptools]
+# src layout: the importable package is src/tempx.
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

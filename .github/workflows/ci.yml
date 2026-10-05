@@ -1,0 +1,62 @@
+name: ci
+
+# CPU only, no network access inside the tests, no model downloads: every fixture is a
+# synthetic safetensors checkpoint built in a tmpdir. The whole matrix is ~1-2 minutes,
+# and almost all of that is the torch wheel.
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      # The CPU wheel index first and on its own: installing torch from PyPI would drag in
+      # the CUDA runtime (gigabytes) for a test suite that never touches a GPU. Once a
+      # torch-x.y.z+cpu is present it already satisfies the `torch>=2.1` requirement below,
+      # so `pip install -e .` will not replace it.
+      - name: Install torch (CPU wheel)
+        run: pip install --index-url https://download.pytorch.org/whl/cpu torch
+
+      - name: Install tempx
+        run: pip install -e .
+
+      - name: Install test deps
+        run: pip install pytest
+
+      - name: Smoke-check the CLI
+        run: |
+          tempx --help
+          tempx targets --help
+          python -c "import tempx; print('tempx', tempx.__version__)"
+
+      - name: Show versions
+        run: python -c "import torch, safetensors; print(torch.__version__, safetensors.__version__)"
+
+      - name: pytest
+        run: pytest -q

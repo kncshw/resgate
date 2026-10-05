@@ -1,0 +1,75 @@
+cff-version: 1.2.0
+title: "tempx: search-free, reference-free rank-1 abliteration with sep(l) per-layer weighting"
+message: >-
+  If you use this software, please cite it together with the two works it is
+  built on: Arditi et al. 2024 (the foundational method) and Heretic (the
+  orthogonalisation step and the rank-1 PRE row-normalised update rule). See
+  ATTRIBUTION.md for exactly which parts are whose.
+type: software
+authors:
+  - name: "tempx contributors"
+license: AGPL-3.0-or-later
+version: 0.1.0
+date-released: "2026-10-03"
+keywords:
+  - abliteration
+  - refusal direction
+  - mechanistic interpretability
+  - AI safety research
+  - red teaming
+abstract: >-
+  A four-step abliteration pipeline totalling 263 lines of core code. It derives
+  its target tensor set from a checkpoint's safetensors headers with no
+  architecture knowledge, fits a per-layer refusal direction from five prompts
+  (one harmful, four harmless) with no reference model and no held-out split,
+  weights each layer by sep(l) = ||h_l - abar_l|| / mean_i||g_i,l - abar_l||
+  normalised to mean 1, and applies one rank-1 PRE row-normalised weight edit at
+  a single global dose K. No search, no Optuna loop, no gradient. Validated on
+  dense (Llama-3.1-8B, 64 targets) and MoE (Qwen3.6-35B-A3B 120 targets;
+  Gemma-4-26B-A4B 90 targets) checkpoints. Ships a three-way
+  REFUSED/DEFLECTED/COMPLIED evaluation, because a keyword refusal count cannot
+  distinguish a model that declines from a model that agrees and then says
+  nothing.
+references:
+  - type: conference-paper
+    title: "Refusal in Language Models Is Mediated by a Single Direction"
+    collection-title: "Advances in Neural Information Processing Systems"
+    volume: 37
+    year: 2024
+    identifiers:
+      - type: other
+        value: "arXiv:2406.11717"
+    url: "https://arxiv.org/abs/2406.11717"
+    authors:
+      - family-names: Arditi
+        given-names: Andy
+      - family-names: Obeso
+        given-names: Oscar
+      - family-names: Syed
+        given-names: Aaquib
+      - family-names: Paleka
+        given-names: Daniel
+      - family-names: Panickssery
+        given-names: Nina
+      - family-names: Gurnee
+        given-names: Wes
+      - family-names: Nanda
+        given-names: Neel
+    notes: >-
+      The foundational method: difference-of-means refusal direction plus a
+      rank-1 weight edit.
+  - type: software
+    title: "Heretic"
+    repository-code: "https://github.com/p-e-w/heretic"
+    license: AGPL-3.0-or-later
+    authors:
+      - family-names: Weidmann
+        given-names: "Philipp Emanuel"
+      - name: "Heretic contributors"
+    notes: >-
+      Source of orthogonalize_direction (main.py:459-469 at the revision this
+      method was built against) and of the rank-1 PRE row-normalised update
+      rule, verified by reproducing Heretic's published weights to cos 0.99985.
+      Also the source of the KeywordRate and KLDivergence metrics reproduced in
+      eval/. Heretic is AGPL-3.0-or-later; this repo is licensed
+      AGPL-3.0-or-later to match. See the licensing section of ATTRIBUTION.md.
