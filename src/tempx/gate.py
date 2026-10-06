@@ -494,6 +494,7 @@ class Gate:
         self.errors = 0
         self.unrouted = 0
         self._live = False
+        self._decided = False
         self._spans: Sequence[tuple[int, int, int, int] | None] | None = None
         self._mask: torch.Tensor | None = None
         self._mask_known = False
@@ -549,10 +550,15 @@ class Gate:
         It does NOT clear the spans: a prefill resets through here BEFORE the read runs, so
         clearing them here would throw away exactly what the read is about to need. The read
         clears them once it has consumed them.
+
+        It DOES clear `_decided`, which is what re-arms the read for the next prefill. The
+        read sets that flag in a `finally`, which runs after the exception handler calls this,
+        so the ordering holds: a raising read still ends up decided.
         """
         self.fired = None
         self.scores = None
         self._live = False
+        self._decided = False
 
     def set_spans(self, spans: Sequence[tuple[int, int, int, int] | None]) -> None:
         """Hand the next prefill its user-content spans, one `user_span()` per sequence, in order.
@@ -621,7 +627,14 @@ class Gate:
         `hidden_states` drops index 0), so a forward hook on `layers[l]` reads exactly what the
         direction was built from -- the off-by-one here would be silent.
         """
-        if self.fired is not None: return None                  # frozen: decode changes nothing
+        # Frozen: decode changes nothing. `_decided` and not just `fired`, because a read that
+        # DECLINED is as final as one that succeeded -- it leaves `fired` None, so keying the
+        # freeze on `fired` alone let every decode token retry a read that cannot work. Each
+        # retry overwrote `last_error` with a downstream shape complaint, hiding the real cause,
+        # and counted itself in `errors`, so one fault read as one-per-token. Worse, `pool` does
+        # not raise for every pooling: "last" returns h[:, -1, :] unchecked, so a retry could
+        # set `fired` from a GENERATED token. Decline once, stay declined.
+        if self._decided or self.fired is not None: return None
         if self.force is None and self.pooling != "last" and not self._mask_known:
             # Not an error in the model, but it is one here: both means need the mask -- one to
             # avoid averaging pads in, the other to find where the real tokens start -- and
@@ -629,6 +642,7 @@ class Gate:
             # "last" needs no mask, left padding putting the last real token at [-1] for every
             # row, and `force` skips the read altogether, so it skips this with it.
             self._note(RuntimeError("attention_mask could not be read from the forward call"))
+            self._decided = True
             return None
         try:
             h = out[0] if isinstance(out, tuple) else out
@@ -641,6 +655,7 @@ class Gate:
             self.reset()
         finally:
             self._spans = None                              # consumed, whatever the outcome
+            self._decided = True                            # decided, declined or raised alike
         return None
 
     def _note(self, e: Exception) -> None:

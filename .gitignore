@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 *.pt
+!kits/**/*.pt
 *.safetensors
 .venv/
 out/

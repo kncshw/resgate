@@ -1119,6 +1119,95 @@ def test_mean_user_and_the_freeze_work_together_through_a_real_generate(monkeypa
     assert torch.equal(m(input_ids=ids, attention_mask=msk).logits, base)
 
 
+# --- a declined read is as final as a successful one ----------------------------------
+#
+# The freeze used to key on `fired is not None`, which only holds after a read SUCCEEDS. A
+# read that declined left `fired` None, so every decode token retried it. Three consequences,
+# and the third is a safety hole rather than a diagnostics one:
+#
+#   1. `last_error` ended up holding whatever the LAST retry raised -- on decode that is a
+#      [B,S]-versus-[B,1] shape complaint -- which buries the real cause.
+#   2. `errors` counted one per decode token, so one fault read as N+1 faults.
+#   3. `pool` does not raise for every pooling. With "last" it returns `h[:, -1, :]` with no
+#      mask and no spans, so a retry on a decode step SUCCEEDS and sets `fired` from a
+#      GENERATED token -- a decision about text the model just wrote, not about the request.
+#
+# `_decided` is the fix: set on every exit path of the read, cleared only by `reset()`, which
+# a prefill calls. These tests pin all three consequences.
+
+
+def test_a_declined_read_does_not_retry_on_every_decode_token(monkeypatch):
+    """One decline is one error and one `last_error`, not one per generated token."""
+    m = _llama()
+    ids, msk = torch.randint(0, 64, (2, 6)), torch.ones(2, 6).long()
+
+    gate = Gate([_wide_blob()], torch.ones(H), -2.0, pooling="mean_user")
+    gate.attach(m, verbose=False)
+
+    gate.set_spans([(1, 3, 2, 6), (1, 3, 2, 6)])
+    m.generate(input_ids=ids, attention_mask=msk, max_new_tokens=5, do_sample=False)
+    assert gate.fired.tolist() == [True, True] and gate.errors == 0
+
+    # Second generate, spans consumed: the read must decline ONCE and stay declined.
+    m.generate(input_ids=ids, attention_mask=msk, max_new_tokens=9, do_sample=False)
+    assert gate.fired is None                                # fail-closed, as before
+    assert gate.errors == 1, "one decline must be one error, not one per decode token"
+    assert "set_spans" in gate.last_error, "last_error must name the CAUSE, not a decode symptom"
+    gate.detach()
+
+
+def test_a_declined_read_cannot_fire_from_a_generated_token_under_last_pooling(monkeypatch):
+    """The safety half: with `last`, a retry on a decode step would read generated text.
+
+    `pool(h, mask, "last")` returns `h[:, -1, :]` before it checks anything, so unlike
+    `mean_user` it cannot raise its way out of a decode-step read. If the prefill read
+    declines and the freeze does not hold, the FIRST decode step decides the request from
+    the token the model just produced. That is not a smaller read, it is the wrong one.
+    """
+    m = _llama()
+    ids, msk = torch.randint(0, 64, (2, 6)), torch.ones(2, 6).long()
+
+    gate = Gate([_wide_blob()], torch.ones(H), -2.0, pooling="last")   # thresh -2: would fire
+    gate.attach(m, verbose=False)
+
+    calls: list = []
+    real = Gate.decide
+
+    def once(self, h, mask, sp=None):
+        calls.append(tuple(h.shape))
+        if len(calls) == 1:
+            raise RuntimeError("synthetic prefill failure")            # decline the prefill
+        return real(self, h, mask, sp)
+
+    monkeypatch.setattr(Gate, "decide", once)
+    m.generate(input_ids=ids, attention_mask=msk, max_new_tokens=5, do_sample=False)
+
+    assert len(calls) == 1, "the read ran again after declining: %r" % (calls,)
+    assert gate.fired is None, "fired was set from a generated token"
+    assert gate._live is False
+    assert gate.errors == 1
+    gate.detach()
+
+
+def test_a_prefill_re_arms_the_read_after_a_decline(monkeypatch):
+    """`_decided` must not be sticky across prefills, or the gate would never fire again."""
+    m = _llama()
+    ids, msk = torch.randint(0, 64, (2, 6)), torch.ones(2, 6).long()
+    spans = [(1, 3, 2, 6), (1, 3, 2, 6)]
+
+    gate = Gate([_wide_blob()], torch.ones(H), -2.0, pooling="mean_user")
+    gate.attach(m, verbose=False)
+
+    m.generate(input_ids=ids, attention_mask=msk, max_new_tokens=3, do_sample=False)
+    assert gate.fired is None and gate.errors == 1          # declined: no spans
+
+    gate.set_spans(spans)                                    # a later caller gets it right
+    m.generate(input_ids=ids, attention_mask=msk, max_new_tokens=3, do_sample=False)
+    assert gate.fired.tolist() == [True, True], "a decline poisoned every later prefill"
+    assert gate.errors == 1                                  # no new errors
+    gate.detach()
+
+
 # --- the fused routed-expert stacks: the other 7 of 21 ---------------------------------
 #
 # `Blk` declares a fused stack and never routes through it, which is what the coverage counts
