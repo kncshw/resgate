@@ -383,51 +383,112 @@ At **bfloat16** the two paths differ, and inherently: the offline path rounds th
 bf16, the hook rounds the *correction*. Measured on one target Linear: 0.0050 relative, about 1.3
 bf16 ulps. Parity is a float32 statement; neither path is the more faithful one.
 
+**The 14-target row above is the 2-D path, and the fused routed-expert path does not inherit its
+bound** (added 2026-10-06). Measured on the 7 fused stacks of this project's primary checkpoint:
+`W − outer(w·(n ⊙ v), u)` against `pre_step` agrees to **2.22e-16** at the weight level — an order
+*under* 1.5e-15 — but over all **896 expert slices** at the *output* level it is **2.147e-15**,
+which is *above* it. More slices, and measured on `y` rather than on `W`. Nine orders still separate
+it from the bf16 arm (1.19e-3 to 1.31e-2 against the materialised weights), which is the statement
+that the gap is rounding and not algebra, but quote the fused arm its own number rather than this
+table's.
+
 ---
 
 ## What it does not reach
 
+> **HISTORICAL as of 2026-10-06 — the MoE gap below is CLOSED.** `attach` now reaches **21 of 21**
+> on this project's primary MoE checkpoint and reports `(21, 0)`; the live server's `/health` says
+> `tensors_hooked 21, direction_keyed_not_reached 0`. The fused 3-D routed-expert stacks are driven
+> through a **second apply site** — a hook on the `experts` module itself, which recomputes the input
+> to its down projection in token space from the stack's own up weight and its own `_apply_gate`, and
+> corrects per routed (token, expert) pair. See **"The fused routed-expert pass"** below for what that
+> site costs, what it proves before it edits, and the one batch shape in which it still declines.
+> The rest of this section is kept as the record of the limitation and of why it was the
+> uncomfortable one.
+
 `attach` returns `(hooked, not_reached)` and prints both. On the band this was built for — layers
-10–16, which is **14 direction keys** over **21 target tensors** — a hook reaches the **14** 2-D
-tensors and **not** the **7 fused 3-D expert stacks**, because a fused stack is a parameter inside
-somebody's MoE routing code and not an `nn.Linear` with a forward to hook.
+10–16, which is **14 direction keys** over **21 target tensors** — a hook reached, *until
+2026-10-06*, the **14** 2-D tensors and **not** the **7 fused 3-D expert stacks**. The reason given
+here was that a fused stack is a parameter inside somebody's MoE routing code and not an `nn.Linear`
+with a forward to hook. **That reason was wrong as stated**, and it is worth recording because it
+sent one design brief to the wrong line of somebody else's code: `layers.N.experts` *is* an
+`nn.Module` with a real forward. The actual obstacle was narrower — in `transformers` 5.5 the body
+that runs is not the experts class's own `forward` at all (the class is wrapped by
+`integrations.moe.use_experts_implementation`, which dispatches on `config._experts_implementation`,
+and on this checkpoint that resolves to `grouped_mm`), and the input to the down projection is a
+**local variable** inside that module-level function. No forward hook can see a local. What a hook
+*can* see is the stack's own module boundary, and that is where the fix went.
 
-The arithmetic for those 7 is not the problem: each expert slice has its own exact `(u, w·(n ⊙ v))`,
-and a test checks all 7 stacks against `pre_step`, slice by slice. The hook machinery is the problem.
-So on an MoE checkpoint the gate applies a **smaller** edit than `patch` does at the same `K`, and
-`docs/PITFALLS.md` 2 — coverage and dose are complements, not substitutes — says what that costs.
+The arithmetic for those 7 was never the problem: each expert slice has its own exact
+`(u, w·(n ⊙ v))` — `precompute` produces them for a whole stack in one broadcast, which was verified
+in float64 against `pre_step` to **5.55e-17** before anything relied on it — and a test checks all 7
+stacks against `pre_step`, slice by slice. The hook machinery was the problem, and it was plumbing.
 
-### Which 14, and why that is the uncomfortable part
+### Which 14, and why that was the uncomfortable part
 
 The 14 a hook reaches are exactly `self_attn.o_proj` and `mlp.down_proj`, seven of each. **That is
 precisely the set both published abliterations of this checkpoint edit** — neither of them touches
 the routed experts; `docs/PITFALLS.md` 2, "On MoE models the routed experts are the easy thing to
-miss", has the tensor counts for both builds. The 7 the hook cannot reach, the fused
+miss", has the tensor counts for both builds. The 7 a hook could not reach, the fused
 `layers.N.experts.down_proj` stacks, are the ones **this project added**, and including them is what
 moved its flagged count at full capability — again, the numbers are in PITFALLS 2, which is where
 they should stay so these two documents cannot drift apart.
 
-Stated plainly, because it is the main practical limitation of this module on the project's own
-primary model: **the runtime hook path reproduces published-standard abliteration coverage on this
-MoE, and what it cannot reach is specifically the coverage improvement this project contributed.**
-It is not a small residue at the edge of the band. It is the delta that distinguished this method's
-builds from the published ones.
+Stated plainly, because it was the main practical limitation of this module on the project's own
+primary model: **until 2026-10-06 the runtime hook path reproduced published-standard abliteration
+coverage on this MoE, and what it could not reach was specifically the coverage improvement this
+project contributed.** It was not a small residue at the edge of the band. In float64 those 7 stacks
+hold **95.50%** of the band's squared-Frobenius edit energy and **57.02%** of its per-token routed
+edit under uniform routing (8 of 128), so a 14-of-21 run was applying **42.98%** of the intended
+per-token edit — the optimistic end of a measured 30%–43% range; see `tempx-blocking-issues.md`
+A21.2 and A22.5 for the worst case and why the range is the honest answer. It was the delta that
+distinguished this method's builds from the published ones.
 
-Full band coverage on an MoE therefore needs one of two things, neither of which is this module:
-the offline `patch()` path, which means a second checkpoint on disk; or an MoE forward patched to
-apply the correction per expert, which is a change to somebody else's routing code and is not here.
+Full band coverage on an MoE therefore needed one of two things: the offline `patch()` path, which
+means a second checkpoint on disk; or the correction applied per expert inside the routed forward.
+**The second of those now exists in this module** — not by patching somebody else's routing code,
+but by recomputing its input at the module boundary the hook can reach.
 
-**On a dense backbone there is no gap at all** — every band target is an `nn.Linear`, and `attach`
-reports 14 of 14 with nothing unreached. A test asserts that against a real `LlamaForCausalLM`.
+**On a dense backbone there was never a gap at all** — every band target is an `nn.Linear`, and
+`attach` reports 14 of 14 with nothing unreached. A test asserts that against a real
+`LlamaForCausalLM`.
 
 So read the number `attach` prints, against your own checkpoint, rather than assuming the band was
-covered. That is the same instruction PITFALLS 2 ends on, and the gate prints the number so that
-following it costs nothing.
+covered. That is the same instruction PITFALLS 2 ends on, it is the instruction the fused pass is
+built to keep cheap, and the gate prints the number so that following it costs nothing.
+
+### The fused routed-expert pass
+
+Three things a caller needs to know about the second apply site, because it is the one part of this
+module whose correctness is **not** guaranteed by its fail-safes:
+
+* **It proves itself before it edits.** The correction subtracts a rank-1 term from an output the
+  hook did not compute, so it is an edit of that stack only if the recomputation really is the input
+  to its down projection — a claim about code this module does not own, and a wrong one would be a
+  confident **wrong** edit rather than no edit. `attach` therefore measures
+  `‖reconstruction − the stack's own forward‖_F / ‖its own forward‖_F` on a 16-token probe, per
+  stack, **before registering a single hook**, and declines any stack over `FUSED_RECON_TOL` (0.1)
+  as `NOT REACHED` — the pre-fix behaviour. **Read the number it logs.** On the served checkpoint it
+  is `0.00e+00` on all 7, measured 1057 times across a 150-row run. Bound: the probe routes to two
+  expert indices only.
+* **It declines in batch shapes it cannot reason about.** A fused stack is handed a flattened token
+  list, so the per-sequence decision must be *expanded* to per-token. `Gate._token_rows` derives and
+  checks that expansion — the token count must divide by the batch, and the per-sequence length must
+  be the padding mask's own width or 1 — and otherwise increments `unrouted` and applies **no**
+  correction. Rectangular left-padded prefill and decode both pass; **a packed or ragged batch does
+  not, and the run then silently becomes a 14-of-21 run.** That is a smaller edit, i.e. fail-safe,
+  but it is invisible except in `/health`'s `lifetime_unrouted`. **Treat a non-zero
+  `lifetime_unrouted` as a coverage failure, not a statistic.** As of 2026-10-06 the pass has only
+  been run at batch size 1 against a real checkpoint.
+* **It costs the up projection a second time** in the band's layers, and one device sync per stack
+  per forward. Measured end to end on a 150-row × 3-arm run: **+7.6%** wall clock, which works out
+  to roughly **+11%** on a forward that is actually being edited.
 
 The direction is also **one blob only**. Sequential application needs the second step's `u` computed
 from the already-edited `W`, which is the one thing a hook does not have; `patch` offline does that.
 
-Both gaps leave the edit smaller than the offline patch's, i.e. nearer to refusing.
+That gap, and any stack the fused pass declines, leave the edit smaller than the offline patch's,
+i.e. nearer to refusing.
 
 ---
 

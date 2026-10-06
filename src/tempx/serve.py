@@ -431,6 +431,12 @@ class GatedModel:
 
         Re-attaching on the way out asserts the same coverage counts it loaded with: a band that
         reached a different number of tensors the second time is not the same arm.
+
+        The lock is released in its OWN `finally`, inside the re-attach's. Releasing after the
+        attach would mean a raising `attach` leaves the lock held forever: the instance would sit
+        permanently in the pristine arm and every later `generate` would fail with "another thread
+        is inside generate()", which names a thread that does not exist. A long-lived server is
+        exactly where that matters, so the ordering is load-bearing rather than stylistic.
         """
         if not self._attached:
             raise RuntimeError("already detached; detached() does not nest")
@@ -443,9 +449,11 @@ class GatedModel:
         try:
             yield self
         finally:
-            got = self.gate.attach(self.model, verbose=self.verbose)
-            self._attached = True
-            self._lock.release()
+            try:
+                got = self.gate.attach(self.model, verbose=self.verbose)
+                self._attached = True
+            finally:
+                self._lock.release()
             if got != self.coverage:
                 raise RuntimeError(
                     "re-attaching reached %s, not the %s this instance loaded with: the two arms "

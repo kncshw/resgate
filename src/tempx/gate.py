@@ -24,6 +24,9 @@ Five properties, each of which is a trap:
     unedited model, so the decision cannot be a function of its own effect.
   * The decision is PER SEQUENCE. The hook multiplies the correction by a [B] 0/1 mask; a row
     that did not fire is left exactly as the unedited module produced it, never the whole batch.
+    A fused routed-expert stack is fed a flattened token list instead of a batch, so there the
+    mask is EXPANDED to tokens -- and only where the expansion is derivable and checked, which
+    is `_token_rows`; where it is not, that stack declines and counts itself in `unrouted`.
   * The decision is taken ONCE at prefill and frozen for the rest of generation. A mean over a
     growing sequence drifts, and a gate recomputed per token can flip mid-answer.
   * The read pools the USER-CONTENT SPAN, and that is a measured requirement, not a preference.
@@ -37,8 +40,9 @@ Five properties, each of which is a trap:
   * Pooling is MASK-WEIGHTED. `capture.py` pads LEFT, so an unweighted mean averages pad rows in,
     and the span's own offset is measured from the right.
   * Every failure lands on NO EDIT: no decision yet, `force=False`, no direction, no threshold, a
-    user span that could not be located, a row layout the per-sequence mask cannot be applied to,
-    or any exception inside the gate. The pristine weights then answer, which means the model
+    user span that could not be located, a row layout the per-sequence mask cannot be applied to
+    or expanded over, a fused stack whose apply site did not prove out, or any exception inside
+    the gate. The pristine weights then answer, which means the model
     refuses. There is no path the other way -- in particular an unlocatable span does NOT fall
     back to `mean_all`, because that fallback is the defect, not the mitigation. Note the scope:
     this is the gate DECLINING when it cannot tell. It is not protection against the gate deciding
@@ -47,19 +51,40 @@ Five properties, each of which is a trap:
     residual refusal behind it (docs/GATE.md, "There is no second line of defence"). The threshold
     is the only thing handling that class of error.
 
-Two coverage gaps, both of which leave the edit SMALLER than `patch()`'s, i.e. closer to refusing,
-and so are coverage gaps rather than safety gaps:
+Fused 3-D MoE expert stacks are reached by a SECOND apply site, and it is the one part of this
+module whose correctness is not guaranteed by its fail-safes:
 
-  * Fused 3-D MoE expert stacks are not `nn.Linear` modules -- a parameter inside somebody's
-    routing code has no forward to hook -- so `attach` counts and names them instead of editing
-    them. On this project's primary MoE checkpoint the band's 21 target tensors split 14 hookable
-    (`self_attn.o_proj` and `mlp.down_proj`, seven each) and 7 not (`layers.N.experts.down_proj`).
-    Those 14 are exactly the set both published abliterations of that checkpoint edit, and the 7
-    are the ones this project added: the runtime path reproduces published-standard coverage and
-    misses precisely this project's coverage improvement. See `docs/PITFALLS.md` 2 for the counts
-    and `docs/GATE.md` for what follows. A dense backbone has no gap -- 14 of 14.
-  * One direction blob only. A sequential second blob needs the second step's `u` computed from
-    the already-edited W, which is the one thing a hook does not have. Patch offline for that.
+  * A fused stack is a 3-D parameter inside somebody's routing code, so there is no `nn.Linear`
+    to hook, and the input to its down projection is a local variable inside a module-level
+    function the class dispatches to at call time -- in transformers 5.5 that is
+    `integrations.moe.grouped_mm_experts_forward`, selected from `config._experts_implementation`
+    and NOT the experts class's own `forward` body. No forward hook can see that local. What a
+    hook CAN see is the stack's own module boundary: the [T,H] token list and the [T,K] routing
+    it was called with. So the down projection's input is RECOMPUTED there, from the stack's own
+    up weight through the stack's own `_apply_gate`, once per routed (token, expert) pair; each
+    pair's expert then contributes its own (u, w (n (*) v)), which `precompute` already produces
+    for a whole stack in one broadcast. The recomputation pays the up projection a second time in
+    the band's layers, and reaching the other 7 tensors is what that buys.
+  * That recomputation is a claim about code this module does not own, and a WRONG one would be a
+    confident wrong edit rather than no edit -- the one failure mode the rest of this file's
+    design does not cover. So `attach` proves it per stack against the stack's own forward, on a
+    probe, before it registers any hook, and declines the stack -- NOT REACHED, exactly as this
+    module behaved before the fused path existed -- when the proof misses or when the stack does
+    not carry the layout flags the arithmetic depends on. `_fused_recon_error` is that proof and
+    `attach` logs the number it got.
+  * Why it is worth the trouble. On this project's primary MoE checkpoint the band's 21 target
+    tensors are 14 `nn.Linear` (`self_attn.o_proj` and `mlp.down_proj`, seven each) and 7 fused
+    (`layers.N.experts.down_proj`) -- and in float64 those 7 hold 95.50% of the band's squared
+    Frobenius edit energy and 57.02% of its per-token ROUTED edit. A runtime path that reached
+    only the 14 was applying 42.98% of the intended per-token edit: published-abliteration
+    coverage, not this project's, which is the asymmetry `docs/PITFALLS.md` 2 is about. A dense
+    backbone has no fused stacks and nothing here applies to it -- 14 of 14.
+
+One coverage gap is left, and it leaves the edit SMALLER than `patch()`'s, i.e. closer to
+refusing, so it is a coverage gap and not a safety gap: ONE DIRECTION BLOB ONLY. A sequential
+second blob needs the second step's `u` computed from the already-edited W, which is the one
+thing a hook does not have. Patch offline for that.
+
 And two constraints on where this can be used, neither of them a coverage gap.
 
 It cannot locate the user span by itself. That needs the tokenizer and the prompt text, and a
@@ -104,6 +129,23 @@ POOLS = ("mean_user", "mean_all", "last")
 # which point on the curve, and what that point measured.
 META_FIELDS = ("category", "pool", "gate_layer", "op", "delivered", "n_target",
                "leak", "n_nontarget", "baseline_leak", "benign_fpr")
+# The fused routed-expert path recomputes the input to a stack's down projection and PROVES that
+# recomputation against the stack's own forward before it hooks anything. This is the bar it has
+# to clear, as ||reconstructed - actual||_F / ||actual||_F. It is set between two MEASURED
+# clusters rather than picked, both at the served dimensions (hidden 2816, intermediate 704,
+# bfloat16, 8 to 256 probe tokens):
+#   a correct reconstruction, rounding only   0.0 against `grouped_mm_experts_forward`, which is
+#                                             the served dispatch, and at worst 6.7e-3 against
+#                                             `batched_mm_experts_forward`, a genuinely different
+#                                             kernel for the same algebra
+#   a reconstruction MISSING A TERM           0.52 to 1.07 (a stack with a shared expert)
+# So 0.1 sits ~15x above what rounding costs and ~5x below the smallest wrong answer seen. It is
+# the Frobenius ratio and not max|.| because max|.| on that same batched_mm measurement is
+# 1.05e-2 -- a couple of bfloat16 ulps on one element of a 2816-wide output -- which would leave
+# any usable bar only 2x of headroom over rounding. A convention error is not subtle at either
+# measure: a swapped gate/up half, a dropped routing weight, an off-by-one expert index or an
+# unmodelled extra term all put it at O(1).
+FUSED_RECON_TOL = 0.1
 
 
 def user_span(
@@ -217,6 +259,153 @@ def precompute(W: torch.Tensor, v: torch.Tensor, w: float) -> tuple[torch.Tensor
     """
     n = W.norm(dim=-1).clamp_min(1e-12)
     return v @ (W / n.unsqueeze(-1)), w * (n * v)
+
+
+def _fused_x(mod: torch.nn.Module, h: torch.Tensor, e: int) -> torch.Tensor:
+    """The input to a fused stack's down projection, for rows `h` all routed to expert `e`.
+
+    Taken from the stack itself -- its own up weight, its own `_apply_gate` or `act_fn` -- so the
+    only thing assumed here is the LAYOUT: [experts, out, in], multiplied against `[e].T`, which
+    is `nn.Linear`'s convention and `transformers.integrations.moe._grouped_linear`'s
+    `is_transposed=False`. `_fused_refusal` reads that flag off the module rather than hoping,
+    and `_fused_recon_error` proves the whole reconstruction against the stack's own forward.
+    """
+    W = mod.gate_up_proj if mod.has_gate else mod.up_proj
+    g = h @ W[e].transpose(-2, -1)
+    return mod._apply_gate(g) if mod.has_gate else mod.act_fn(g)
+
+
+def fused_correction(mod: torch.nn.Module, h: torch.Tensor, idx: torch.Tensor,
+                     wts: torch.Tensor, u: torch.Tensor, wnv: torch.Tensor,
+                     m: torch.Tensor) -> torch.Tensor:
+    """sum_k w[t,k] * (x[t,k] @ u_e) * (n (*) v)_e per token: `_edit_hook`'s edit on a fused stack.
+
+    A fused stack's rows are routed (token, expert) PAIRS, and each pair's expert has its own
+    (u, w (n (*) v)) -- which is why one direction key covers all 128 experts of a layer and the
+    correction still differs per expert. `m` is the [T] 0/1 expansion of the per-sequence
+    decision, folded into the scalar exactly as the 2-D hook folds its [B] mask, so a token that
+    did not fire contributes a hard zero and its row of the output is the unedited stack's, bit
+    for bit.
+
+    The pair loop runs over the experts the FIRED tokens routed to, and over their rows only, so
+    a row that did not fire is never put through `_fused_x` at all and its scalar stays the zero
+    it was initialised to. That is bit-identity by construction rather than by multiplying by
+    zero -- the multiply stays, as the second guard and as the statement of what the mask is --
+    and on a selective gate, where most sequences do not fire, it is also most of the work.
+
+    Two costs, both deliberate. Driving the loop from Python is one device sync per stack per
+    forward; and `_fused_x` pays the up projection a second time in the band's layers. Reaching
+    the other 7 tensors is what they buy. Neither has been measured on the served checkpoint.
+
+    The accumulation is a sum over the K routing slots, NOT an `index_add_` over duplicate token
+    indices: that would make the served arm differ from itself run to run, because its CUDA
+    atomics reorder low-precision adds. `grouped_mm_experts_forward` avoids the same thing for
+    the same reason, and in its own comment.
+    """
+    T, K = idx.shape
+    s = h.new_zeros(T, K)
+    on = m.bool()
+    for e in idx[on].unique().tolist():
+        sel = (idx == e) & on.unsqueeze(-1)
+        rows = sel.nonzero(as_tuple=True)[0]
+        x = _fused_x(mod, h[rows], e)
+        s[sel] = (x * u[e].to(x.dtype)).sum(-1).to(s.dtype)
+    s = s * wts.to(s.dtype) * m.to(s.dtype).unsqueeze(-1)
+    corr = h.new_zeros(T, wnv.shape[-1])
+    for k in range(K):
+        corr += s[:, k, None] * wnv[idx[:, k]].to(corr.dtype)
+    return corr
+
+
+def _fused_recon_error(mod: torch.nn.Module, n_tok: int = 16) -> float:
+    """||reconstruction - the stack's own forward||_F / ||its own forward||_F. The positive control.
+
+    `fused_correction` subtracts a rank-1 term from an output it did not compute, so it is an edit
+    of this stack only if `_fused_x` really is the input to this stack's down projection. That is
+    a claim about somebody else's routing code, and in transformers 5.5 the body that runs is not
+    even the experts class's own `forward` -- the class is wrapped by
+    `integrations.moe.use_experts_implementation`, whose `forward` dispatches on
+    `config._experts_implementation` at call time. So the claim is MEASURED, per stack, on a
+    probe of `n_tok` tokens routed to the first and last expert in equal numbers -- equal so the
+    grouped kernel's group offsets stay aligned -- and measured BEFORE a single hook exists.
+
+    This is the one claim fail-closed does not cover: a wrong reconstruction would be a confident
+    WRONG edit, not a smaller one. `attach` therefore declines any stack whose error exceeds
+    `FUSED_RECON_TOL` and reports it NOT REACHED, which is this module's behaviour before the
+    fused path existed. READ THE NUMBER IT LOGS -- it is the proof, not a formality.
+    """
+    W = mod.down_proj
+    up = mod.gate_up_proj if mod.has_gate else mod.up_proj
+    es = [0, W.shape[0] - 1] if W.shape[0] > 1 else [0]
+    g = torch.Generator().manual_seed(0)
+    h = torch.randn(n_tok, up.shape[-1], generator=g).to(W.device, W.dtype)
+    idx = torch.tensor([es] * n_tok, device=W.device)
+    wts = torch.tensor([[0.6, 0.4][:len(es)]] * n_tok, device=W.device, dtype=W.dtype)
+    with torch.no_grad():
+        ref = mod(h, idx, wts)
+        mine = torch.zeros_like(ref)
+        for e in es:
+            sel = idx == e
+            rows = sel.nonzero(as_tuple=True)[0]
+            y = _fused_x(mod, h[rows], e) @ W[e].transpose(-2, -1)
+            mine.index_add_(0, rows, (y * wts[sel].to(y.dtype).unsqueeze(-1)).to(mine.dtype))
+    den = float(ref.float().pow(2).sum()) ** 0.5
+    return float((mine.float() - ref.float()).pow(2).sum()) ** 0.5 / max(den, 1e-30)
+
+
+def _fused_refusal(mod: torch.nn.Module, W: torch.Tensor, nv: int) -> str | None:
+    """Why this fused stack cannot be driven, or None when it can. Refuse rather than assume.
+
+    Every branch is something the correction depends on and cannot read off the parameter: which
+    way round the stack is stored, whether the up projection is gated, whether a per-expert bias
+    rides along. `use_experts_implementation` sets all three as instance attributes, so they are
+    READ; a 3-D parameter that does not carry them is somebody else's routing code and is left to
+    `patch()` with its name and the reason printed.
+    """
+    for a in ("has_gate", "has_bias", "is_transposed", "num_experts"):
+        if not hasattr(mod, a):
+            return "%s has no .%s, so it is not a transformers fused expert stack" % (
+                type(mod).__name__, a)
+    if mod.is_transposed:
+        return ("is_transposed=True stores the stack [experts,in,out]; precompute, pre_step and "
+                "the patched checkpoints all read [experts,out,in]")
+    if mod.has_bias:
+        return ("has_bias=True: the correction itself is bias-independent, but the "
+                "reconstruction that proves the apply site would have to model the bias, and an "
+                "unproven apply site is not one")
+    if int(mod.num_experts) != W.shape[0]:
+        return "num_experts %d is not the stack's %d experts" % (mod.num_experts, W.shape[0])
+    if nv != W.shape[1]:
+        return "direction %d != out dim %d" % (nv, W.shape[1])
+    nm = "gate_up_proj" if mod.has_gate else "up_proj"
+    up = getattr(mod, nm, None)
+    if not isinstance(up, torch.Tensor) or up.dim() != 3:
+        return "no 3-D %s to recompute the down projection's input from" % nm
+    if tuple(up.shape[:2]) != (W.shape[0], (2 if mod.has_gate else 1) * W.shape[2]):
+        return "%s %s does not feed a [%d,%d,%d] down projection" % (
+            nm, tuple(up.shape), W.shape[0], W.shape[1], W.shape[2])
+    if not callable(getattr(mod, "_apply_gate" if mod.has_gate else "act_fn", None)):
+        return "no %s to take the gate from" % ("_apply_gate" if mod.has_gate else "act_fn")
+    return None
+
+
+def _precompute_fused(W: torch.Tensor, v: torch.Tensor, w: float, dt: torch.dtype,
+                      chunk: int = 8) -> tuple[torch.Tensor, torch.Tensor]:
+    """`precompute` over a fused [experts,out,in] stack, `chunk` experts at a time.
+
+    The same arithmetic -- the broadcast is per expert and mixes none of them -- but `precompute`
+    needs a float32 cast of W and then W/n beside it, and a stack is 1.0 GB of bf16 on this
+    project's primary checkpoint, so doing it whole costs ~2 GB transient per layer. `attach`
+    runs again on every `/compare` call, so that transient is paid repeatedly on a box whose
+    119.6 GiB is one pool shared with the host. Chunked it is ~130 MB, and what is KEPT is
+    u [experts,in] and w (n (*) v) [experts,out], under 1 MB a layer.
+    """
+    us, wnvs = [], []
+    for i in range(0, W.shape[0], chunk):
+        u, wnv = precompute(W[i:i + chunk].to(dt), v, w)
+        us.append(u.to(W.dtype)); wnvs.append(wnv.to(W.dtype))
+        del u, wnv
+    return torch.cat(us), torch.cat(wnvs)
 
 
 def _is_prefill(kwargs: dict) -> bool:
@@ -482,6 +671,57 @@ class Gate:
                 return None
         return hook
 
+    def _token_rows(self, n_tok: int) -> torch.Tensor | None:
+        """The [T] per-token expansion of the [B] decision, or None -- counted -- if unsound.
+
+        A fused stack is handed a FLATTENED token list, so the per-sequence mask has to be
+        expanded rather than applied. The only layout that expansion is sound for is the one the
+        decoder layer produces: a row-major `[B,S,H] -> [B*S,H]` reshape of a rectangular batch,
+        where token t belongs to sequence t // (T // B). So that is DERIVED and CHECKED -- T must
+        divide by B, and when the padding mask is known the per-sequence length has to be the
+        mask's own width or 1, a decode step. Anything else declines and counts itself, exactly
+        as `_edit_hook` does for a row layout that is not a batch: mis-expanding this mask would
+        answer one sequence under another sequence's decision, which is the failure this whole
+        module exists to prevent, and it would be silent.
+        """
+        f = self.fired
+        B = f.shape[0]
+        if B == 0 or n_tok % B:
+            self.unrouted += 1
+            return None
+        n = n_tok // B
+        m = self._mask
+        if n != 1 and isinstance(m, torch.Tensor) and m.dim() == 2 and n != m.shape[1]:
+            self.unrouted += 1
+            return None
+        return f if n == 1 else f.repeat_interleave(n)
+
+    def _fused_hook(self, u: torch.Tensor, wnv: torch.Tensor):
+        """The same correction on a fused stack: per routed (token, expert) pair, same fail-safe."""
+        def hook(mod, args, kwargs, out):
+            if self.fired is None or not self._live: return None     # no decision -> no edit
+            try:
+                h = args[0] if len(args) > 0 else kwargs.get("hidden_states")
+                idx = args[1] if len(args) > 1 else kwargs.get("top_k_index")
+                wts = args[2] if len(args) > 2 else kwargs.get("top_k_weights")
+                if not all(isinstance(t, torch.Tensor) for t in (out, h, idx, wts)):
+                    raise RuntimeError(
+                        "a fused stack's forward did not carry (hidden_states, top_k_index, "
+                        "top_k_weights) and a tensor output, so there is no routing to edit by")
+                if ((h.dim(), idx.dim(), out.dim()) != (2, 2, 2) or idx.shape != wts.shape
+                        or out.shape[0] != h.shape[0] or idx.shape[0] != h.shape[0]):
+                    raise RuntimeError(
+                        "a fused stack's token list is not [T,H] with [T,K] routing and a [T,*] "
+                        "output: %s, %s, %s"
+                        % (tuple(h.shape), tuple(idx.shape), tuple(out.shape)))
+                m = self._token_rows(h.shape[0])
+                if m is None: return None            # counted: the mask cannot be expanded
+                return out - fused_correction(mod, h, idx, wts, u, wnv, m).to(out.dtype)
+            except Exception as e:                                   # fail-safe: no edit
+                self._note(e)
+                return None
+        return hook
+
     # --- attach / detach ---------------------------------------------------------------
 
     @staticmethod
@@ -514,17 +754,25 @@ class Gate:
         return hits[0]
 
     def attach(self, model: torch.nn.Module, verbose: bool = True) -> tuple[int, int]:
-        """Hook the read layer and every 2-D target in the band. Returns (hooked, not reached).
+        """Hook the read layer and every target in the band. Returns (hooked, not reached).
+
+        Two passes, and they are separate on purpose. The first is the `nn.Linear` pass, which is
+        every 2-D target and is untouched by the second: everything this module has ever measured
+        was measured through it. The second is the fused routed-expert pass, which drives a 3-D
+        stack through its own module boundary and is the only way to reach a parameter that has
+        no `nn.Linear` of its own -- and it declines, loudly, rather than guess (`_fused_refusal`,
+        `_fused_recon_error`).
 
         The plan is built in full before a single hook is registered, so a failure here leaves
         the model exactly as it was -- unedited, which is the safe side. `not reached` counts the
-        direction-keyed target parameters in the band that no hook covers: fused 3-D expert
-        stacks above all, which are not `nn.Linear` modules.
+        direction-keyed target parameters in the band that no hook covers.
 
         READ THAT NUMBER. It is the coverage check `docs/PITFALLS.md` 2 says to run on your own
         checkpoint. 0 means this is the same edit `patch()` would write. Anything else is a
-        weaker edit at the same K, and on an MoE the shortfall is not incidental -- it is the
-        routed experts, which is the part published abliterations of these checkpoints also miss.
+        weaker edit at the same K, and on an MoE the shortfall is not incidental -- 95.5% of the
+        band's squared-Frobenius edit energy and 57.0% of its per-token routed edit sit in the
+        fused stacks on this project's primary checkpoint, so a run that reaches only the 14 is
+        applying 43.0% of the intended per-token edit.
         """
         def log(*a):
             if verbose: print(*a, flush=True)
@@ -553,7 +801,40 @@ class Gate:
             u, wnv = precompute(W, v / v.norm().clamp_min(1e-12), self.w[k])
             plan.append((name, mod, u.to(mod.weight.dtype), wnv.to(mod.weight.dtype)))
 
-        hooked = {"%s.weight" % name for name, _, _, _ in plan}
+        # The fused pass. Keyed off the PARAMETER, because that is the thing with a direction and
+        # the thing the coverage count is about; the module that owns it is where the hook goes.
+        fused: list[tuple[str, torch.nn.Module, torch.Tensor, torch.Tensor]] = []
+        why: dict[str, str] = {}
+        for pname, p in model.named_parameters():
+            if p.dim() != 3: continue
+            k = self._key(pname)
+            if k is None: continue
+            mod = model.get_submodule(pname.rsplit(".", 1)[0])
+            no = _fused_refusal(mod, p.detach(), self.d[k].numel())
+            if no is None:
+                # `attach` stays total. The proof calls somebody else's forward with synthetic
+                # inputs, and a stack that cannot take them is a coverage question rather than a
+                # server failure, so the exception becomes the reason and the stack is declined.
+                try:
+                    err = _fused_recon_error(mod)
+                except Exception as e:
+                    no = "its own forward raised on the proof probe: %r" % (e,)
+                else:
+                    if err > FUSED_RECON_TOL:
+                        no = ("its own forward is not the %.2e reconstruction this would edit "
+                              "(tolerance %.0e), so the edit is unproven here"
+                              % (err, FUSED_RECON_TOL))
+            if no is not None:
+                why[pname] = no
+                continue
+            dt = torch.promote_types(p.dtype, torch.float32)
+            v = self.d[k].detach().flatten().to(p.device, dt)
+            u, wnv = _precompute_fused(p.detach(), v / v.norm().clamp_min(1e-12), self.w[k], dt)
+            fused.append((pname, mod, u, wnv))
+            why[pname] = "reconstruction %.2e relative" % err
+
+        hooked = ({"%s.weight" % name for name, _, _, _ in plan}
+                  | {pname for pname, _, _, _ in fused})
         want = {n for n, p in model.named_parameters()
                 if p.dim() in (2, 3) and self._key(n) is not None}
         unreached = sorted(want - hooked)
@@ -564,19 +845,25 @@ class Gate:
         self._handles.append(read_mod.register_forward_hook(self._read_hook))
         for _, mod, u, wnv in plan:
             self._handles.append(mod.register_forward_hook(self._edit_hook(u, wnv)))
+        for _, mod, u, wnv in fused:
+            self._handles.append(
+                mod.register_forward_hook(self._fused_hook(u, wnv), with_kwargs=True))
 
         log("GATE  category=%s  read %s %s  thresh %s  edit L%d-%d  K=%.2f"
             % (self.meta.get("category", "?"), read_name, self.pooling,
                "NONE (never fires)" if self.thresh is None else "%.4f" % self.thresh,
                self.edit_layers[0], self.edit_layers[-1], self.K))
         log("   %d tensors hooked, %d direction-keyed target(s) NOT reached"
-            % (len(plan), len(unreached)))
+            % (len(plan) + len(fused), len(unreached)))
         for b in bad: log("   SHAPE MISMATCH, not hooked  %s" % b)
-        for n in unreached: log("   NOT REACHED  %s" % n)
+        for n, _, _, _ in fused: log("   FUSED, driven through its own forward  %s  %s"
+                                     % (n, why[n]))
+        for n in unreached:
+            log("   NOT REACHED  %s%s" % (n, "  %s" % why[n] if n in why else ""))
         if self.pooling != "last" and not has_mask:
             log("   forward() does not name attention_mask: %s pooling has no mask to weight by, "
                 "so the gate will NOT fire. Nothing is edited." % self.pooling)
-        return len(plan), len(unreached)
+        return len(plan) + len(fused), len(unreached)
 
     def detach(self) -> None:
         """Remove every hook and forget the decision. Idempotent; the model is then pristine."""

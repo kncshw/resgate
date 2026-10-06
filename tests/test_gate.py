@@ -22,8 +22,8 @@ import torch
 from torch import nn
 
 from tempx.enumerate_targets import OUT_NAMES
-from tempx.gate import (EDIT_LAYERS, GATE_LAYER, META_FIELDS, Gate, pool, precompute,
-                        user_span)
+from tempx.gate import (EDIT_LAYERS, FUSED_RECON_TOL, GATE_LAYER, META_FIELDS, Gate,
+                        fused_correction, pool, precompute, user_span)
 from tempx.patch import key_of, layer_of, pre_step
 
 H, F, E, NL = 8, 16, 2, 17
@@ -1117,3 +1117,494 @@ def test_mean_user_and_the_freeze_work_together_through_a_real_generate(monkeypa
     assert gate.fired is None and "set_spans" in gate.last_error   # consumed, so it declines
     gate.detach()
     assert torch.equal(m(input_ids=ids, attention_mask=msk).logits, base)
+
+
+# --- the fused routed-expert stacks: the other 7 of 21 ---------------------------------
+#
+# `Blk` declares a fused stack and never routes through it, which is what the coverage counts
+# above are measured against and is still the right stub for them -- a bare 3-D Parameter with no
+# routing code around it is exactly the thing the fused path must decline. This section adds one
+# that IS routed, shaped and attributed the way `transformers.integrations.moe`'s
+# `use_experts_implementation` shapes and attributes `Gemma4TextExperts`: a [experts, out, in]
+# down projection, a [experts, 2*in, hidden] gate_up, `_apply_gate` as `_default_apply_gate` spells
+# it, and the three layout flags the fused path READS off the module rather than assuming
+# (`has_gate`, `has_bias`, `is_transposed`). Its forward takes the real contract -- a flattened
+# [T,H] token list plus [T,K] routing -- which is why the down projection's input is a local that
+# no forward hook can see, and has to be recomputed from the module boundary instead.
+#
+# Still no real model and nothing downloaded. What is being tested is the apply site, and the
+# served checkpoint's own forward is proved against the reconstruction at `attach` time, on the
+# box, by `gate._fused_recon_error` -- not here.
+
+NE, TK = 4, 2                                        # experts per stack, routing slots per token
+
+
+class MoEExperts(nn.Module):
+    """A fused routed-expert stack: one 3-D down projection, driven by a token list.
+
+    `shared` adds a dense term every token gets routed or not. Nothing in the fused path models
+    it, so a stack carrying one has to FAIL the reconstruction proof and be declined -- even
+    though the routed part of the correction would still have been right. That is the
+    conservative side, and it is the side an unproven apply site has to fall on.
+    """
+
+    def __init__(self, g: torch.Generator, dtype=torch.float32, shared: bool = False) -> None:
+        super().__init__()
+        self.num_experts = NE
+        self.has_gate, self.has_bias, self.is_transposed = True, False, False
+        self.gate_up_proj = nn.Parameter((torch.randn(NE, 2 * F, H, generator=g) * 0.3).to(dtype))
+        self.down_proj = nn.Parameter((torch.randn(NE, H, F, generator=g) * 0.3).to(dtype))
+        self.act_fn = nn.GELU()
+        self.shared = nn.Parameter(
+            (torch.randn(H, H, generator=g) * 0.3).to(dtype)) if shared else None
+
+    def _apply_gate(self, gate_up_out: torch.Tensor) -> torch.Tensor:
+        gate, up = gate_up_out.chunk(2, dim=-1)
+        return self.act_fn(gate) * up
+
+    def forward(self, hidden_states, top_k_index, top_k_weights):
+        out = torch.zeros_like(hidden_states)
+        for e in range(self.num_experts):
+            sel = top_k_index == e
+            rows = sel.nonzero(as_tuple=True)[0]
+            if rows.numel() == 0: continue
+            x = self._apply_gate(hidden_states[rows] @ self.gate_up_proj[e].transpose(-2, -1))
+            y = (x @ self.down_proj[e].transpose(-2, -1)) * top_k_weights[sel].unsqueeze(-1)
+            out.index_add_(0, rows, y)
+        if self.shared is not None: out = out + hidden_states @ self.shared.T
+        return out
+
+
+def _rms(h: torch.Tensor) -> torch.Tensor:
+    """Pre-block normalisation, as a real decoder layer has one, over the last dim only."""
+    return h / h.norm(dim=-1, keepdim=True).clamp_min(1e-12) * (H ** 0.5)
+
+
+class MoEBlk(nn.Module):
+    """`Blk`'s three residual writes with a routed MoE block as the third, over a TOKEN LIST.
+
+    PRE-NORMALISED, unlike `Blk`, and that is numerics and not taste: a fused stack's gating is
+    quadratic in its input, so `Blk`'s unnormalised residual -- which grows ~4x a layer and is
+    harmless on its own -- squares that growth and overflows float32 well before layer 17. The
+    norm is per token over the last dim only, so this stays POSITION-WISE like the rest of this
+    file: a row's output does not depend on what else is in the batch or on how much it was
+    padded, which is what lets the mixed-batch test isolate the mask. It also leaves the three
+    branches the same order of magnitude, so a fused edit is actually visible in the output
+    rather than buried under an exponentially larger residual.
+
+    The flatten is the real one -- a row-major `[B,S,H] -> [B*S,H]` reshape -- because that
+    layout is the entire reason `Gate._token_rows` can map a token back to its sequence.
+
+    `ragged` breaks that on purpose: the stack is then called with a token list that is not B
+    equal sequences, which no per-sequence mask can be expanded over.
+    """
+
+    def __init__(self, g: torch.Generator, dtype=torch.float32, shared: bool = False,
+                 ragged: bool = False) -> None:
+        super().__init__()
+        self.ragged = ragged
+        self.self_attn = nn.Module()
+        self.self_attn.o_proj = _lin(H, H, g, dtype)               # 2-D target -> attn_out
+        self.mlp = nn.Module()
+        self.mlp.up_proj = _lin(H, F, g, dtype)                    # reads: never a target
+        self.mlp.down_proj = _lin(F, H, g, dtype)                  # 2-D target -> mlp_out
+        self.router = _lin(H, NE, g, dtype)                        # "router" matches no OUT_NAME
+        self.experts = MoEExperts(g, dtype, shared)                # 3-D target -> mlp_out
+
+    def forward(self, h, **kw):
+        h = h + 0.5 * self.self_attn.o_proj(_rms(h))
+        h = h + 0.5 * self.mlp.down_proj(torch.tanh(self.mlp.up_proj(_rms(h))))
+        B, Sq, _ = h.shape
+        flat = _rms(h).reshape(-1, H)                 # row-major: token t is sequence t // Sq
+        w, idx = torch.topk(self.router(flat).softmax(-1), TK, dim=-1)
+        w = w / w.sum(-1, keepdim=True)
+        if self.ragged:
+            part = self.experts(flat[:-1], idx[:-1], w[:-1])
+            out = torch.cat([part, torch.zeros_like(part[:1])])
+        else:
+            out = self.experts(flat, idx, w)
+        return h + 0.5 * out.view(B, Sq, H)
+
+
+class MoEStack(nn.Module):
+    """Model root with a routed MoE block at every layer: the 21-of-21 shape."""
+
+    def __init__(self, g: torch.Generator, nl: int = NL, dtype=torch.float32, **kw) -> None:
+        super().__init__()
+        self.layers = nn.ModuleList([MoEBlk(g, dtype, **kw) for _ in range(nl)])
+        self.requires_grad_(False)                   # served weights; and gate.py sets no global
+
+    def forward(self, h, attention_mask=None, past_key_values=None):
+        for l in self.layers: h = l(h)
+        return h
+
+
+def _moe(seed: int = 7, **kw) -> MoEStack:
+    return MoEStack(torch.Generator().manual_seed(seed), **kw)
+
+
+def _declined(model: MoEStack) -> MoEStack:
+    """The same model with every fused stack refused, and its FORWARD untouched.
+
+    `is_transposed` is read by `_fused_refusal` and by nothing in the stub's forward, so this is
+    the 14-of-21 arm of the same weights -- which is what makes "the fused pass changed nothing
+    about the 2-D pass" a comparison and not an assertion.
+    """
+    for l in model.layers: l.experts.is_transposed = True
+    return model
+
+
+def _materialise_moe(model: nn.Module, gate: Gate,
+                     dtype=torch.float32) -> tuple[nn.Module, int, int]:
+    """`_materialise`, plus `patch()`'s own per-expert loop over the fused stacks. 21 of 21."""
+    ref, n2 = _materialise(model, gate, dtype=dtype)
+    n3 = 0
+    for pname, p in ref.named_parameters():
+        if p.dim() != 3: continue
+        # The role filter `enumerate_targets` and `Gate._is_target` apply, and it earns its keep
+        # here: `experts.gate_up_proj` is 3-D, is at a band layer, and `key_of` would hand it the
+        # layer's ATTN_OUT direction. It writes to nothing but the stack's own gate, so it is not
+        # a target at all, and patching it would make this reference a different model.
+        if not any(o in pname for o in OUT_NAMES): continue
+        l = layer_of(pname)
+        if l is None or l not in gate.edit_layers: continue
+        k = key_of(pname, l)
+        if k not in gate.d: continue
+        v = gate.d[k].to(dtype).flatten(); v = v / v.norm()
+        with torch.no_grad():
+            p.copy_(torch.stack([pre_step(p[e].detach().to(dtype), v, gate.w[k])
+                                 for e in range(p.shape[0])]))
+        n3 += 1
+    return ref, n2, n3
+
+
+def _moe_ref_and_gate(model, blob, c=None, thresh=None, K=1.0, force=None,
+                      dtype=torch.float32) -> tuple[Gate, nn.Module]:
+    """(gate, materialised 21-of-21 reference), reference copied before any hook exists."""
+    gate = Gate([blob], c, thresh, K=K, pooling="mean_all")
+    gate.force = force
+    ref, n2, n3 = _materialise_moe(model, gate, dtype=dtype)
+    assert (n2, n3) == (14, 7)
+    assert gate.attach(model, verbose=False) == (21, 0)
+    return gate, ref
+
+
+def _routing(model: nn.Module, x, msk) -> list:
+    """Every layer's [T,K] expert choice for one forward. The parity arms have to AGREE on it.
+
+    The two arms differ by rounding, and a topk that flipped on that rounding would make them
+    different models -- a parity failure that is not an arithmetic failure, and the one way this
+    section could fail for a reason that is not the thing under test. So it is checked first.
+    """
+    seen: list = []
+    hs = [l.experts.register_forward_hook(
+        lambda mod, a, o, seen=seen: seen.append(a[1].tolist())) for l in model.layers]
+    try:
+        model(x, attention_mask=msk)
+    finally:
+        for h in hs: h.remove()
+    return seen
+
+
+def test_fused_correction_is_the_materialised_edit_per_routed_pair(blob):
+    """The arithmetic alone, at float64: the correction IS routing those tokens through pre_step.
+
+    No model, no hooks, no gate. `pre_step` is applied to every expert slice -- `patch()`'s own
+    loop -- and the difference the stack's forward then shows has to be what `fused_correction`
+    computed without touching a weight. The mask is mixed, so this also pins that a zero row
+    contributes exactly nothing rather than nearly nothing.
+    """
+    g = torch.Generator().manual_seed(13)
+    mod = MoEExperts(g, dtype=torch.float64)
+    v = blob["d"]["10.mlp_out"].double().flatten(); v = v / v.norm()
+    w = blob["w"]["10.mlp_out"]
+    u, wnv = precompute(mod.down_proj.detach(), v, w)
+    assert u.shape == (NE, F) and wnv.shape == (NE, H)
+    h = torch.randn(6, H, generator=g, dtype=torch.float64)
+    idx = torch.randint(0, NE, (6, TK), generator=g)
+    wt = torch.rand(6, TK, generator=g, dtype=torch.float64)
+    m = torch.tensor([1., 0., 1., 1., 0., 1.], dtype=torch.float64)
+    got = fused_correction(mod, h, idx, wt, u, wnv, m)
+    y0 = mod(h, idx, wt)
+    assert got.shape == (6, H)
+    with torch.no_grad():
+        mod.down_proj.copy_(torch.stack([pre_step(mod.down_proj[e].detach(), v, w)
+                                         for e in range(NE)]))
+    want = (y0 - mod(h, idx, wt)) * m.unsqueeze(-1)
+    err, scale = float((got - want).abs().max()), float(want.abs().max())
+    assert err <= 1e-12 * scale, (err, scale, err / scale)
+    assert torch.equal(got[1], torch.zeros(H, dtype=torch.float64))
+    assert torch.equal(got[4], torch.zeros(H, dtype=torch.float64))
+
+
+def test_a_row_that_did_not_fire_never_reaches_the_gate_recomputation(blob, monkeypatch):
+    """Not "contributes zero": not computed. The pair loop is restricted to the fired rows.
+
+    So a non-fired row's output is the unedited stack's by construction, which is a stronger
+    statement than multiplying its correction by zero -- and on a selective gate, where most
+    sequences do not fire, it is also where most of the work goes.
+    """
+    import tempx.gate as G
+    g = torch.Generator().manual_seed(13)
+    mod = MoEExperts(g, dtype=torch.float64)
+    v = blob["d"]["10.mlp_out"].double().flatten(); v = v / v.norm()
+    u, wnv = precompute(mod.down_proj.detach(), v, blob["w"]["10.mlp_out"])
+    h = torch.randn(6, H, generator=g, dtype=torch.float64)
+    idx = torch.randint(0, NE, (6, TK), generator=g)
+    wt = torch.rand(6, TK, generator=g, dtype=torch.float64)
+    rows: list = []
+    real = G._fused_x
+    monkeypatch.setattr(G, "_fused_x",
+                        lambda mo, hh, e: rows.append(hh.shape[0]) or real(mo, hh, e))
+    G.fused_correction(mod, h, idx, wt, u, wnv,
+                       torch.tensor([1., 0., 1., 1., 0., 1.], dtype=torch.float64))
+    assert sum(rows) == 4 * TK                                 # 4 fired rows x TK slots, no more
+    rows.clear()
+    G.fused_correction(mod, h, idx, wt, u, wnv, torch.zeros(6, dtype=torch.float64))
+    assert rows == []                                          # nothing fired: nothing computed
+
+
+def test_a_routed_stack_closes_the_band_to_21_of_21(blob, capsys):
+    """The count this whole path exists for, and it names which 7 and what proved them."""
+    gate = Gate([blob], None, None)
+    assert gate.attach(_moe(), verbose=True) == (21, 0)
+    out = capsys.readouterr().out
+    assert "21 tensors hooked, 0 direction-keyed target(s) NOT reached" in out
+    assert "NOT REACHED" not in out
+    for l in BAND:
+        assert ("FUSED, driven through its own forward  layers.%d.experts.down_proj" % l) in out
+    assert "reconstruction" in out and "relative" in out
+
+
+@pytest.mark.parametrize("dtype,rel", [(torch.float32, 1e-5), (torch.float64, 1e-12)])
+@pytest.mark.parametrize("K", [0.5, 1.0, 1.5])
+def test_parity_on_all_21_matches_the_materialised_edit(blob, dtype, rel, K):
+    """THE test, extended to the other 7: the hooked unedited model against pre_step's weights.
+
+    `test_parity_forced_on_matches_the_materialised_edit` is this statement for the 14 that are
+    `nn.Linear`. This one patches all 21 -- the fused ones through `patch()`'s per-expert loop --
+    and the hook has to reproduce it through a routing permutation it never sees. Same bounds as
+    the 2-D arm, because it is the same two lines of arithmetic.
+    """
+    m = _moe(dtype=dtype)
+    x, msk = _x(2, S, 17).to(dtype), torch.ones(2, S, dtype=dtype)
+    y0 = m(x, attention_mask=msk)
+    gate, ref = _moe_ref_and_gate(m, blob, K=K, force=True, dtype=dtype)
+    assert _routing(ref, x, msk) == _routing(m, x, msk)
+    y_ref, y = ref(x, attention_mask=msk), m(x, attention_mask=msk)
+    err, scale = float((y - y_ref).abs().max()), float(y_ref.abs().max())
+    assert err <= rel * scale, (err, scale, err / scale)
+    assert float((y_ref - y0).abs().max()) > 1e3 * max(err, 1e-300)   # not a no-op comparison
+    assert gate.fired.tolist() == [True, True] and gate.unrouted == 0 and gate.errors == 0
+
+
+def test_the_fused_pass_does_not_change_one_bit_of_the_2_d_pass(blob):
+    """Proved, not asserted: with the fused stacks declined, every 2-D hook is BIT-IDENTICAL.
+
+    Everything this project has measured ran through the 2-D pass, so the fused pass is only
+    admissible if it is purely additive to it. Both arms are the same weights at the same K with
+    the same frozen decision; the modules are then called directly on the same input, which is
+    the 2-D correction on its own with the MoE block's downstream effect out of the way.
+    """
+    a, b = _moe(), _declined(_moe())
+    ga, gb = Gate([blob], None, None), Gate([blob], None, None)
+    ga.force = gb.force = True
+    assert ga.attach(a, verbose=False) == (21, 0)
+    assert gb.attach(b, verbose=False) == (14, 7)
+    x, msk = _x(2, S, 17), torch.ones(2, S)
+    a(x, attention_mask=msk); b(x, attention_mask=msk)             # freeze a decision in both
+    assert ga.fired.tolist() == gb.fired.tolist() == [True, True]
+    g, n = torch.Generator().manual_seed(31), 0
+    for l in BAND:
+        for sub in ("self_attn.o_proj", "mlp.down_proj"):
+            ma = a.get_submodule("layers.%d.%s" % (l, sub))
+            mb = b.get_submodule("layers.%d.%s" % (l, sub))
+            assert torch.equal(ma.weight, mb.weight)               # same weights to begin with
+            xx = torch.randn(2, ma.in_features, generator=g)
+            assert torch.equal(ma(xx), mb(xx)), (l, sub)
+            n += 1
+    assert n == 14
+
+
+def test_a_fused_stack_edits_only_the_sequences_that_fired(blob):
+    """One firing sequence and one not, through a flattened token list that mixes their tokens."""
+    m = _moe()
+    xA, xB = _x(1, S, 21), _x(1, S, 22)
+    c, thr, sA, sB = _two_sided(m, xA, xB)
+    assert sB < thr < sA                                       # positive control for the mix
+    x, msk = torch.cat([xA, xB]), torch.ones(2, S)
+    y0 = m(x, attention_mask=msk)
+    gate, ref = _moe_ref_and_gate(m, blob, c, thr)
+    y_edit = ref(x, attention_mask=msk)
+    y = m(x, attention_mask=msk)
+    assert gate.fired.tolist() == [True, False]
+    assert torch.equal(y[1], y0[1])                            # did not fire: untouched, exactly
+    assert not torch.allclose(y[0], y0[0])                     # fired: and it mattered
+    assert torch.allclose(y[0], y_edit[0], atol=1e-5 * float(y_edit.abs().max()), rtol=0)
+    assert gate.unrouted == 0 and gate.errors == 0
+
+
+def test_no_decision_means_no_fused_edit(blob):
+    """`fired is None` is what a declining read leaves behind, and it has to reach the stacks too.
+
+    A fused path that edited on a missing decision would be the worst bug in this file: the whole
+    design is that no decision means pristine weights, which means the model refuses.
+    """
+    m = _moe()
+    x, msk = _x(2, S, 17), torch.ones(2, S)
+    y0 = m(x, attention_mask=msk)
+    gate = Gate([blob], None, None)                            # no direction, no threshold
+    assert gate.attach(m, verbose=False) == (21, 0)
+    assert torch.equal(m(x, attention_mask=msk), y0)
+    assert gate.fired is None and gate.errors == 0
+    gate.force = False
+    assert torch.equal(m(x, attention_mask=msk), y0)
+    assert not bool(gate.fired.any())
+
+
+def test_an_exception_on_the_fused_path_is_exactly_the_14_of_21_model(blob, monkeypatch):
+    """A raising correction is NO edit of that stack, counted -- and nothing else changes.
+
+    The comparison arm is the same weights with the fused stacks declined, so "fail-safe" here is
+    not "close to unedited": it is bit-for-bit the model this module served before the fused path
+    existed.
+    """
+    a, b = _moe(), _declined(_moe())
+    ga, gb = Gate([blob], None, None), Gate([blob], None, None)
+    ga.force = gb.force = True
+    assert ga.attach(a, verbose=False) == (21, 0)
+    assert gb.attach(b, verbose=False) == (14, 7)
+    monkeypatch.setattr("tempx.gate.fused_correction",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("nope")))
+    x, msk = _x(2, S, 17), torch.ones(2, S)
+    assert torch.equal(a(x, attention_mask=msk), b(x, attention_mask=msk))
+    assert ga.errors == 7 and "nope" in ga.last_error
+    assert gb.errors == 0
+
+
+def test_a_token_list_the_decision_cannot_be_expanded_over_is_declined_and_counted(blob):
+    """Not B equal sequences: decline, count it, and leave that stack exactly unedited.
+
+    `_edit_hook` already refuses a leading dim that is not the batch. This is the same refusal
+    one level further in -- the leading dim IS tokens here, by design, and the question is
+    whether they map back to sequences. When they do not, editing the whole list would answer one
+    sequence under another sequence's decision.
+    """
+    a, b = _moe(ragged=True), _declined(_moe(ragged=True))
+    ga, gb = Gate([blob], None, None), Gate([blob], None, None)
+    ga.force = gb.force = True
+    assert ga.attach(a, verbose=False) == (21, 0)
+    assert gb.attach(b, verbose=False) == (14, 7)
+    x, msk = _x(2, S, 17), torch.ones(2, S)                    # B=2, S=5 -> 9 rows, not 2 x k
+    assert torch.equal(a(x, attention_mask=msk), b(x, attention_mask=msk))
+    assert ga.unrouted == 7 and ga.errors == 0                 # one per fused stack, not an error
+    assert gb.unrouted == 0
+
+
+@pytest.mark.parametrize("n_tok,want", [(10, 5), (2, 1), (9, None), (20, None), (11, None)])
+def test_the_token_expansion_is_derived_and_checked(blob, n_tok, want):
+    """The expansion rule itself: T must divide B, and the per-sequence length must be the mask's.
+
+    B=2 and a [2,5] padding mask, so 10 tokens is a prefill (5 each), 2 is a decode step (1 each),
+    and 9, 11 and 20 are none of the layouts this mask describes. The last is the dangerous one --
+    20 divides by 2 cleanly and would expand to 10 tokens a sequence against a mask that says 5.
+    """
+    m = _moe()
+    gate = Gate([blob], None, None)
+    gate.force = True
+    gate.attach(m, verbose=False)
+    m(_x(2, S, 17), attention_mask=torch.ones(2, S))
+    assert gate.unrouted == 0                                   # the forward's own layout is fine
+    got = gate._token_rows(n_tok)
+    if want is None:
+        assert got is None and gate.unrouted == 1
+    else:
+        assert got.tolist() == [True] * n_tok
+        assert got.shape[0] == want * 2 and gate.unrouted == 0
+
+
+def test_detach_restores_the_pristine_forward_with_fused_stacks(blob):
+    """A detached model is byte-identical to one that never had a gate, fused stacks included.
+
+    The fused path adds a second kind of hook and writes no weight anywhere, so `detach`'s one
+    job does not change -- which is the reason the apply site is a hook and not a replaced
+    forward. Asserted on the hook dicts as well as the output, because "restores" is a claim
+    about the module and not only about one input.
+    """
+    m = _moe()
+    x, msk = _x(2, S, 17), torch.ones(2, S)
+    y0 = m(x, attention_mask=msk)
+    gate = Gate([blob], None, None)
+    gate.force = True
+    assert gate.attach(m, verbose=False) == (21, 0)
+    assert not torch.allclose(m(x, attention_mask=msk), y0)
+    gate.detach()
+    assert torch.equal(m(x, attention_mask=msk), y0)
+    assert not any(mod._forward_hooks or mod._forward_pre_hooks for mod in m.modules())
+    gate.detach()                                              # idempotent
+    assert torch.equal(m(x, attention_mask=msk), y0)
+    assert gate.attach(m, verbose=False) == (21, 0)            # and re-attachable to the same
+    assert not torch.allclose(m(x, attention_mask=msk), y0)
+    gate.detach()
+
+
+def test_a_stack_whose_forward_the_reconstruction_misses_is_declined_by_name(blob, capsys):
+    """The positive control doing its job, which is the one thing fail-closed cannot do for it.
+
+    A shared expert is additive, so the ROUTED correction would still have been right and this
+    decline costs coverage for nothing. It is still the only admissible answer: the reconstruction
+    is missing a term, so the apply site is unproven, and an unproven apply site would be a
+    confident wrong edit rather than a smaller one.
+    """
+    gate = Gate([blob], None, None)
+    assert gate.attach(_moe(shared=True), verbose=True) == (14, 7)
+    out = capsys.readouterr().out
+    assert "14 tensors hooked, 7 direction-keyed target(s) NOT reached" in out
+    for l in BAND:
+        assert ("NOT REACHED  layers.%d.experts.down_proj" % l) in out
+    assert "is not the" in out and "reconstruction" in out
+    assert "tolerance %.0e" % FUSED_RECON_TOL in out
+
+
+@pytest.mark.parametrize("attr,val,msg", [
+    ("is_transposed", True, "is_transposed=True"),
+    ("has_bias", True, "has_bias=True"),
+    ("num_experts", NE + 1, "num_experts 5 is not the stack's 4"),
+])
+def test_a_fused_stack_that_does_not_carry_the_layout_is_refused_by_name(blob, capsys,
+                                                                        attr, val, msg):
+    """Read the flags off the module, refuse what they do not say. Never guess the layout.
+
+    Each of these changes what the correction's arithmetic would have to be, and none of them is
+    visible in the parameter's shape. A 3-D stack is reached because the module said how it is
+    stored, or it is not reached.
+    """
+    m = _moe()
+    for l in BAND: setattr(m.layers[l].experts, attr, val)
+    assert Gate([blob], None, None).attach(m, verbose=True) == (14, 7)
+    assert msg in capsys.readouterr().out
+
+
+def test_a_stack_whose_forward_raises_at_the_probe_is_declined_not_propagated(blob, monkeypatch,
+                                                                              capsys):
+    """`attach` stays total. The proof calls somebody else's forward with synthetic inputs, and a
+    stack that cannot take them is a coverage question and not a server failure: it declines and
+    names the exception, which is where every other failure in this file lands too. `attach`
+    raising instead would take a long-lived server's re-attach down over a coverage detail.
+    """
+    monkeypatch.setattr("tempx.gate._fused_recon_error",
+                        lambda *a, **k: (_ for _ in ()).throw(RuntimeError("probe blew up")))
+    assert Gate([blob], None, None).attach(_moe(), verbose=True) == (14, 7)
+    out = capsys.readouterr().out
+    assert "raised on the proof probe" in out and "probe blew up" in out
+
+
+def test_a_bare_3_d_parameter_is_left_to_patch(blob, model, capsys):
+    """`Blk`'s fused stack is a Parameter with no routing code around it, and the reason says so.
+
+    This is what the 14-of-21 counts in this file's coverage tests are measured against, and it
+    is the honest answer for a 3-D tensor whose routing the gate cannot see: `patch()` can edit
+    it offline, a hook cannot.
+    """
+    assert Gate([blob], None, None).attach(model, verbose=True) == (14, 7)
+    assert "has no .has_gate" in capsys.readouterr().out
