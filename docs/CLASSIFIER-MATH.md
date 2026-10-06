@@ -55,6 +55,19 @@ the **15-class** structure and must not be read as an argument for a multi-dimen
 
 ## 3. The direction
 
+> ### `k` is not `K`
+>
+> This document's `k` is the **truncation rank** of the whitening below — how many
+> eigenvalue directions get whitened out of `c`. The shipped value is **`k = 5`**.
+>
+> The abliteration **dose** is a different quantity written with a capital letter:
+> `K`, in `w = K · w_l` (`METHOD.md:160`). The shipped value is **`K = 2.0`**.
+>
+> They never interact. `k` lives in the READ and never touches a weight. `K` lives in
+> the EDIT and never touches the classifier. The two sweeps that chose them are
+> separate experiments. The names differ only by case, which is a trap, so every
+> number below that says `k` means the truncation rank.
+
 ### 3.1 The construction
 
 Truncated whitening of `d` against the pooled within-class covariance, at `k = 5`, resolved as
