@@ -55,6 +55,20 @@ the **15-class** structure and must not be read as an argument for a multi-dimen
 
 ## 3. The direction
 
+> ### Four symbols, two letters. Read this before any number below.
+>
+> |  | name | what it controls | touches weights? |
+> |---|---|---|---|
+> | **`K`** | abliteration **dose**, in `w = K * w_l` | how hard refusal is removed | **yes** |
+> | **`k`** | truncation **rank** | how many noise directions are shrunk | no |
+> | **`L`** | **leak budget**, in `m = floor(L * rows(Xn))` | where the threshold sits | no |
+> | **`L8`, `L12`** | **layer index** | which decoder layer is read | no |
+>
+> Only `K` changes a weight. `k`, `L` and the layer index all live in the READ and are
+> independent of each other. A reader has already confused `k` with `K`, with "5 of 14
+> categories", with the rejected top5-closest experiment, and `L` with the dose. The
+> shipped values are `K = 2.0`, `k = 5`, `L = 0.05` on Gemma at layer 8.
+>
 > ### `k` is not `K`
 >
 > This document's `k` is the **truncation rank** of the whitening below — how many
