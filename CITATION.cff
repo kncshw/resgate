@@ -6,11 +6,13 @@ message: >-
   orthogonalisation step and the rank-1 PRE row-normalised update rule). See
   ATTRIBUTION.md for exactly which parts are whose.
 type: software
+repository-code: "https://github.com/kncshw/resgate"
+url: "https://github.com/kncshw/resgate"
 authors:
   - name: "resgate contributors"
 license: AGPL-3.0-or-later
 version: 0.1.0
-date-released: "2026-10-03"
+date-released: "2026-10-15"
 keywords:
   - abliteration
   - refusal direction
