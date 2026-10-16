@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-title: "ResGate: search-free, reference-free rank-1 abliteration with sep(l) per-layer weighting"
+title: "ResGate: Topic-Scoped Refusal Removal via Single-Layer Residual Gating"
 message: >-
   If you use this software, please cite it together with the two works it is
   built on: Arditi et al. 2024 (the foundational method) and Heretic (the

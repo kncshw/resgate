@@ -14,7 +14,7 @@ The repository is organized into two parallel tracks (`gate/` and `ablation/`) a
 `resgate.capture`, and `resgate.enumerate_targets` remain aliased so existing scripts and tests
 run unchanged.)*
 
-- **Paper draft (PDF):** [`paper/resgate.pdf`](paper/resgate.pdf)
+- **Paper draft (PDF):** [*ResGate: Topic-Scoped Refusal Removal via Single-Layer Residual Gating* (`paper/resgate.pdf`)](paper/resgate.pdf)
 - **Verified PoC repository:** [`https://github.com/kncshw/resgate`](https://github.com/kncshw/resgate)
 - **Gate math & live GPU tables:** [`docs/gate/CLASSIFIER-MATH.md`](docs/gate/CLASSIFIER-MATH.md)
 - **Runtime hook & MoE reconstruction spec:** [`docs/gate/GATE.md`](docs/gate/GATE.md)
