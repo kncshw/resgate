@@ -18,8 +18,8 @@ import pytest
 import torch
 from safetensors import safe_open
 
-from tempx.enumerate_targets import enumerate_targets
-from tempx.patch import build_plan, key_of, layer_of, patch, pre_step
+from resgate.enumerate_targets import enumerate_targets
+from resgate.patch import build_plan, key_of, layer_of, patch, pre_step
 from conftest import SHARD, SHARD2
 
 H = 8
@@ -244,7 +244,7 @@ def test_direction_blob_drives_the_patch_end_to_end(tmp_path, write_ckpt):
     names, so this runs the real compute_directions output into the real patcher. Still no
     model: the activations are synthetic and D == hidden_size == 8.
     """
-    from tempx.direction import compute_directions
+    from resgate.direction import compute_directions
 
     g = torch.Generator().manual_seed(23)
     acts = {"nlast": 1, "snapshot": "synthetic", "sys": "", "items": [

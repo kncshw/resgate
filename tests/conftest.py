@@ -1,6 +1,6 @@
 """Shared fixtures. CPU-only, no network, no model downloads.
 
-The tests import `tempx` from `src/` when the package is not installed, so a bare
+The tests import `resgate` from `src/` when the package is not installed, so a bare
 `pytest` in a checkout works as well as `pip install -e . && pytest`.
 """
 from __future__ import annotations

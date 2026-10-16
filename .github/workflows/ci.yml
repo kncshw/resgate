@@ -43,7 +43,7 @@ jobs:
       - name: Install torch (CPU wheel)
         run: pip install --index-url https://download.pytorch.org/whl/cpu torch
 
-      - name: Install tempx
+      - name: Install resgate
         run: pip install -e .
 
       - name: Install test deps
@@ -51,9 +51,9 @@ jobs:
 
       - name: Smoke-check the CLI
         run: |
-          tempx --help
-          tempx targets --help
-          python -c "import tempx; print('tempx', tempx.__version__)"
+          resgate --help
+          resgate targets --help
+          python -c "import resgate; print('resgate', resgate.__version__)"
 
       - name: Show versions
         run: python -c "import torch, safetensors; print(torch.__version__, safetensors.__version__)"

@@ -29,7 +29,7 @@ SRC="${SRC:-./gemma-4-26B-A4B-it}"
 DST="${DST:-./gemma-4-26B-A4B-it-ablated}"
 
 # The 5-prompt kit: 1 harmful + 4 harmless. See kits/README.md.
-PROMPTS="${PROMPTS:-kits/minimal.json}"
+PROMPTS="${PROMPTS:-kits/ablation/minimal.json}"
 
 # Scratch for the two intermediate blobs.
 OUTDIR="${OUTDIR:-out/gemma}"
@@ -69,7 +69,7 @@ mkdir -p "$OUTDIR"
 # shapes). Leaving the experts unedited is exactly the coverage failure behind
 # the published build that deflects 77/100 — see docs/RESULTS.md §5.
 echo "=== 1/4  targets  ($SRC) ==============================================="
-tempx targets "$SRC"
+resgate targets "$SRC"
 
 # ---------------------------------------------------------------------------
 # Step 2 — capture: residual stream at the last prompt token, every layer.
@@ -85,7 +85,7 @@ tempx targets "$SRC"
 # LOOK AT: the layer/hidden line and the prompt-group counts
 # ({'harmful': 1, 'harmless': 4}).
 echo "=== 2/4  capture  ($MODEL) ============================================="
-tempx capture \
+resgate capture \
   --model   "$MODEL" \
   --prompts "$PROMPTS" \
   --out     "$OUTDIR/acts.pt" \
@@ -111,7 +111,7 @@ tempx capture \
 #      are effectively running --mode uniform. The printed max/min ratio is the
 #      quick read.
 echo "=== 3/4  direction ====================================================="
-tempx direction \
+resgate direction \
   --acts "$OUTDIR/acts.pt" \
   --out  "$OUTDIR/dir.pt" \
   --mode sep \
@@ -137,7 +137,7 @@ fi
 # A different kit shifts the magnitude at equal K (the h006 kit gives 0.0840 at
 # K=0.5 where the CBRN kit gives 0.0904), so compare kits on max|dW|.
 echo "=== 4/4  patch  (K=$K) ================================================="
-tempx patch \
+resgate patch \
   --src  "$SRC" \
   --dst  "$DST" \
   --dirs "$OUTDIR/dir.pt" \

@@ -3,14 +3,14 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "tempx"
+name = "resgate"
 version = "0.1.0"
 description = "Search-free, reference-free rank-1 abliteration: five prompts, one weight edit, sep(l) per-layer weighting."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "AGPL-3.0-or-later"
 license-files = ["LICENSE"]
-authors = [{ name = "tempx contributors" }]
+authors = [{ name = "resgate contributors" }]
 keywords = ["abliteration", "refusal-direction", "interpretability", "safety-research", "red-teaming"]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -32,14 +32,14 @@ dependencies = [
 # eval/judge_threeway.py talks to an OpenAI-compatible endpoint over HTTP.
 # eval/keyword_rate.py and eval/kl.py need nothing beyond the core deps.
 eval = ["requests>=2.28"]
-# `tempx capture --devmap auto` needs accelerate to shard a model across devices.
+# `resgate capture --devmap auto` needs accelerate to shard a model across devices.
 shard = ["accelerate>=0.26"]
 
 [project.scripts]
-tempx = "tempx.cli:main"
+resgate = "resgate.cli:main"
 
 [tool.setuptools]
-# src layout: the importable package is src/tempx.
+# src layout: the importable package is src/resgate.
 package-dir = { "" = "src" }
 
 [tool.setuptools.packages.find]

@@ -38,7 +38,7 @@ SRC="${SRC:-./Llama-3.1-8B-Instruct}"
 DST="${DST:-./Llama-3.1-8B-Instruct-ablated}"
 
 # The 5-prompt kit: 1 harmful + 4 harmless. See kits/README.md.
-PROMPTS="${PROMPTS:-kits/minimal.json}"
+PROMPTS="${PROMPTS:-kits/ablation/minimal.json}"
 
 # Scratch for the two intermediate blobs.
 OUTDIR="${OUTDIR:-out/llama}"
@@ -75,7 +75,7 @@ mkdir -p "$OUTDIR"
 # from the residual stream rather than writing to it. That is what the role
 # filter is for.
 echo "=== 1/4  targets  ($SRC) ==============================================="
-tempx targets "$SRC"
+resgate targets "$SRC"
 
 # ---------------------------------------------------------------------------
 # Step 2 — capture: residual stream at the last prompt token, every layer.
@@ -87,7 +87,7 @@ tempx targets "$SRC"
 # LOOK AT: "32 layers, hidden 4096" and the group counts
 # ({'harmful': 1, 'harmless': 4}).
 echo "=== 2/4  capture  ($MODEL) ============================================="
-tempx capture \
+resgate capture \
   --model   "$MODEL" \
   --prompts "$PROMPTS" \
   --out     "$OUTDIR/acts.pt" \
@@ -113,7 +113,7 @@ tempx capture \
 #   2. The sep(l) profile should show a band, not a flat line. Flat means sep is
 #      carrying no information and you are effectively on --mode uniform.
 echo "=== 3/4  direction ====================================================="
-tempx direction \
+resgate direction \
   --acts "$OUTDIR/acts.pt" \
   --out  "$OUTDIR/dir.pt" \
   --mode sep \
@@ -135,7 +135,7 @@ fi
 # The published max|dW| figures in docs/RESULTS.md are GEMMA's; do not expect
 # this run to reproduce them. Record your own and dose-match against it.
 echo "=== 4/4  patch  (K=$K) ================================================="
-tempx patch \
+resgate patch \
   --src  "$SRC" \
   --dst  "$DST" \
   --dirs "$OUTDIR/dir.pt" \

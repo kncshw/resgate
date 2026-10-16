@@ -21,10 +21,10 @@ import pytest
 import torch
 from torch import nn
 
-from tempx.enumerate_targets import OUT_NAMES
-from tempx.gate import (EDIT_LAYERS, FUSED_RECON_TOL, GATE_LAYER, META_FIELDS, Gate,
+from resgate.enumerate_targets import OUT_NAMES
+from resgate.gate import (EDIT_LAYERS, FUSED_RECON_TOL, GATE_LAYER, META_FIELDS, Gate,
                         fused_correction, pool, precompute, user_span)
-from tempx.patch import key_of, layer_of, pre_step
+from resgate.patch import key_of, layer_of, pre_step
 
 H, F, E, NL = 8, 16, 2, 17
 BAND = EDIT_LAYERS                                   # layers 10-16
@@ -1433,7 +1433,7 @@ def test_a_row_that_did_not_fire_never_reaches_the_gate_recomputation(blob, monk
     statement than multiplying its correction by zero -- and on a selective gate, where most
     sequences do not fire, it is also where most of the work goes.
     """
-    import tempx.gate as G
+    import resgate.gate as G
     g = torch.Generator().manual_seed(13)
     mod = MoEExperts(g, dtype=torch.float64)
     v = blob["d"]["10.mlp_out"].double().flatten(); v = v / v.norm()
@@ -1563,7 +1563,7 @@ def test_an_exception_on_the_fused_path_is_exactly_the_14_of_21_model(blob, monk
     ga.force = gb.force = True
     assert ga.attach(a, verbose=False) == (21, 0)
     assert gb.attach(b, verbose=False) == (14, 7)
-    monkeypatch.setattr("tempx.gate.fused_correction",
+    monkeypatch.setattr("resgate.gate.fused_correction",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("nope")))
     x, msk = _x(2, S, 17), torch.ones(2, S)
     assert torch.equal(a(x, attention_mask=msk), b(x, attention_mask=msk))
@@ -1681,7 +1681,7 @@ def test_a_stack_whose_forward_raises_at_the_probe_is_declined_not_propagated(bl
     names the exception, which is where every other failure in this file lands too. `attach`
     raising instead would take a long-lived server's re-attach down over a coverage detail.
     """
-    monkeypatch.setattr("tempx.gate._fused_recon_error",
+    monkeypatch.setattr("resgate.gate._fused_recon_error",
                         lambda *a, **k: (_ for _ in ()).throw(RuntimeError("probe blew up")))
     assert Gate([blob], None, None).attach(_moe(), verbose=True) == (14, 7)
     out = capsys.readouterr().out
@@ -1697,3 +1697,83 @@ def test_a_bare_3_d_parameter_is_left_to_patch(blob, model, capsys):
     """
     assert Gate([blob], None, None).attach(model, verbose=True) == (14, 7)
     assert "has no .has_gate" in capsys.readouterr().out
+
+
+# --- M1 + M3 closed-form gate fitting & shipped kits -----------------------------------
+
+def test_fit_gate_direction_m1_ridge_matches_full_covariance_solve():
+    """Verify Gram-route `fit_gate_direction` (`M1_ridge_lam16`) matches full D x D ridge solve."""
+    from resgate.gate import fit_gate_direction, fit_gate_op, thresh_r2, thresh_r3
+
+    g = torch.Generator().manual_seed(42)
+    n_pos, n_neg, D = 20, 28, 32
+    xp = torch.randn(n_pos, D, generator=g, dtype=torch.float64)
+    xn = torch.randn(n_neg, D, generator=g, dtype=torch.float64)
+    neg_groups = ["cat_%d" % (i // 2) for i in range(n_neg)]  # 14 subcategories
+
+    c, info = fit_gate_direction(xp, xn, neg_groups, rank=16, mode="ridge")
+    assert c.shape == (D,) and c.dtype == torch.float32
+    assert abs(float(c.norm().item()) - 1.0) < 1e-6
+    assert info["scatter"] == "M1_subcat"
+    assert info["dof"] == n_pos + n_neg - 1 - 14
+
+    # Independent full D x D matrix check in float64
+    xp_u = xp / xp.norm(dim=-1, keepdim=True)
+    xn_u = xn / xn.norm(dim=-1, keepdim=True)
+    d = xp_u.mean(0) - xn_u.mean(0)
+    z_list = [xp_u - xp_u.mean(0)]
+    for s in sorted(set(neg_groups)):
+        idx = [i for i, x in enumerate(neg_groups) if x == s]
+        xg = xn_u[idx]
+        z_list.append(xg - xg.mean(0))
+    Z = torch.cat(z_list, dim=0)
+    Sigma = (Z.T @ Z) / float(info["dof"])
+    alpha = info["alpha"]
+    w_full = alpha * torch.linalg.solve(Sigma + alpha * torch.eye(D, dtype=torch.float64), d)
+    c_full = (w_full / w_full.norm()).to(torch.float32)
+    assert torch.allclose(c, c_full, atol=1e-6)
+
+    # Check fit_gate_op and Gate.from_file round-trip
+    op = fit_gate_op(xp, xn, neg_groups, category="cyber_offense", gate_layer=GATE_LAYER,
+                     m=3, rule="R3", rank=16, mode="ridge")
+    gate = Gate.from_file([_blob()], op)
+    assert gate.thresh == op["thresh"]
+    assert int(((xn_u @ c.to(torch.float64)) >= gate.thresh).sum().item()) <= 3
+    t_r2 = thresh_r2(xp_u @ c.to(torch.float64), xn_u @ c.to(torch.float64), 3)
+    assert int(((xn_u @ c.to(torch.float64)) >= t_r2).sum().item()) <= 3
+    t_r3 = thresh_r3(xn_u @ c.to(torch.float64), 3)
+    assert t_r3 == op["thresh"]
+
+
+def test_shipped_m1_ridge_lam16_kits_load_cleanly():
+    """Verify every shipped M1_ridge_lam16 kit in `kits/{ablation,gate}/*/` satisfies Gate.from_file
+    and that its documented sha256 and threshold in `kits/gate/<model>/README.md` match the file."""
+    import hashlib
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parents[1] / "kits"
+    pairs = [
+        ("gemma4-26B", "gemma_dir90_cbrn_L10to16.pt", "op_gemma_L8_M1subcat240_M1_ridge_lam16_serve.pt", range(10, 17)),
+        ("gemma4-26B", "dir_gemma4-26B_sep.pt", "op_gemma_L8_M1subcat240_M1_ridge_lam16_serve.pt", range(10, 17)),
+        ("gemma4-26B", "gemma_dir90_cbrn_L10to16.pt", "op_wmdpbio_B2_M1_ridge_lam16_R3U140_gemma_L8.pt", range(10, 17)),
+        ("phi4mini", "dir_phi4mini_sep_L13to15.pt", "op_phi4mini_L11_M1subcat240_M1_ridge_lam16_serve.pt", range(13, 16)),
+        ("phi4mini", "dir_phi4mini_sep_L13to15.pt", "op_wmdpbio_B2_M1_ridge_lam16_R3U140_phi4mini_L11.pt", range(13, 16)),
+        ("phi4mini", "dir_phi4mini_sep_L13to15.pt", "op_wmdpbio_B2_M1_ridge_lam16_R3U140_phi4mini_L12.pt", range(13, 16)),
+        ("llama31-8B", "dir_llama31-8B_sep_L11to22.pt", "op_llama31-8B_L10_M1subcat240_M1_ridge_lam16_serve.pt", range(11, 23)),
+        ("llama31-8B", "dir_llama31-8B_sep.pt", "op_llama31-8B_L10_M1subcat240_M1_ridge_lam16_serve.pt", range(11, 23)),
+        ("llama31-8B", "dir_llama31-8B_sep_L11to22.pt", "op_wmdpbio_B2_M1_ridge_lam16_R3U140_llama31-8B_L10.pt", range(11, 23)),
+    ]
+    for sub, dir_fn, op_fn, band in pairs:
+        dir_path = root / "gate" / sub / dir_fn
+        op_path = root / "gate" / sub / op_fn
+        readme_text = (root / "gate" / sub / "README.md").read_text(encoding="utf-8")
+        g = Gate.from_file([dir_path], op_path, edit_layers=tuple(band))
+        assert max(g.gate_layers) < min(g.edit_layers)
+        assert g.pooling == "mean_user"
+        assert g.c is not None and g.thresh is not None
+        assert repr(float(g.thresh)) in readme_text
+        assert hashlib.sha256(dir_path.read_bytes()).hexdigest() in readme_text
+        assert hashlib.sha256(op_path.read_bytes()).hexdigest() in readme_text
+
+
+
+

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Hold a gated Gemma-4 in memory and let a human poke the gate BY HAND, over loopback HTTP.
 
-WHAT THIS IS. A stdlib-only HTTP server wrapping exactly ONE `tempx.serve.GatedModel`: the
-PRISTINE checkpoint plus `tempx.gate`'s forward hooks, read at the layer the operating-point file
+WHAT THIS IS. A stdlib-only HTTP server wrapping exactly ONE `resgate.serve.GatedModel`: the
+PRISTINE checkpoint plus `resgate.gate`'s forward hooks, read at the layer the operating-point file
 declares, edit band from `--edit-layers`, decision taken at prefill and frozen, per sequence. No
 weight is modified and nothing is written to disk; `close()` leaves the model bit-for-bit as it was
 loaded.
@@ -13,7 +13,7 @@ prompt, right now, and what would the same prompt have got without it" -- for as
 process runs, at the cost of holding the model resident the whole time (see COSTS below).
 
 THIS FILE IS UNRUN, AND SO IS WHAT IT DRIVES. The gated demo shipped its own private wrapper
-(`GatedRunner`) and never imported `tempx.serve`, so `serve.py` has never executed against a real
+(`GatedRunner`) and never imported `resgate.serve`, so `serve.py` has never executed against a real
 checkpoint: `gate.py` has 160 tests behind it, `serve.py` has none behind itself. The first launch
 of this file is therefore also the first execution of `serve.py`'s loading, batching and reporting
 path. Read the startup block before trusting a single answer it gives, and treat the first
@@ -245,11 +245,11 @@ def read_op_meta(path: str):
 def load_model(a: argparse.Namespace):
     """The one model load, through the real wrapper, with every cheap check in front of it."""
     # Deferred so that --help and `python3 -m py_compile` work on a host with no torch and no
-    # tempx -- which is where this file was written.
-    if os.environ.get("TEMPX") and os.environ["TEMPX"] not in sys.path:
-        sys.path.insert(0, os.environ["TEMPX"])     # the gated demo's convention; or PYTHONPATH
+    # resgate -- which is where this file was written.
+    if os.environ.get("RESGATE") and os.environ["RESGATE"] not in sys.path:
+        sys.path.insert(0, os.environ["RESGATE"])     # the gated demo's convention; or PYTHONPATH
     import torch
-    from tempx.serve import GatedModel
+    from resgate.serve import GatedModel
 
     if not os.path.isdir(a.model):
         raise SystemExit("ABORT: --model %r is not a directory. The checkpoints on k36 live in "
@@ -272,7 +272,7 @@ def load_model(a: argparse.Namespace):
             % (a.sys_prompt, CAPTURE_SYS))
 
     meta = read_op_meta(a.op)
-    say("\nloading the PRISTINE checkpoint through tempx.serve.GatedModel.load "
+    say("\nloading the PRISTINE checkpoint through resgate.serve.GatedModel.load "
         "(bfloat16, no device_map, .to('cuda')) -- about 270 s on k36, port opens after it")
     t0 = time.time()
     gm = GatedModel.load(a.model, a.dirs, a.op, K=a.K, edit_layers=a.edit_layers,
@@ -489,7 +489,7 @@ def health_doc() -> dict:
         },
         "costs": "~56 GiB resident for as long as this process runs, out of k36's single 119.6 GiB "
                  "unified pool. It blocks every other model job on the box until it is stopped.",
-        "unrun_warning": "this server and tempx/serve.py had never executed against a real "
+        "unrun_warning": "this server and resgate/serve.py had never executed against a real "
                          "checkpoint before this process started.",
     }
 
@@ -569,7 +569,7 @@ class ForceStuck(RuntimeError):
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "tempx-gated-serve/1"
+    server_version = "resgate-gated-serve/1"
 
     def log_message(self, fmt, *a):                 # the per-request summary line is printed by
         return                                      # the handlers themselves; keep stdout readable
@@ -749,7 +749,7 @@ class Handler(BaseHTTPRequestHandler):
         d = decision(r, "gated")
         if path == "/gate":
             d["note"] = (
-                "DECISION ONLY. tempx/serve.py exposes no score-only entry point -- `_batch` is "
+                "DECISION ONLY. resgate/serve.py exposes no score-only entry point -- `_batch` is "
                 "private and `generate` is the only way in, deliberately -- so this ran %d token "
                 "to get a decision through the supported API. `completion` is that token and is "
                 "not an answer; use /generate for one." % GATE_TOKENS)
@@ -860,8 +860,8 @@ class Handler(BaseHTTPRequestHandler):
 def main(argv=None) -> int:
     global GM, ARGS, OPMETA
     ARGS = parse_args(sys.argv[1:] if argv is None else argv)
-    say("=== tempx gated HTTP server, starting %s ===" % time.strftime("%Y-%m-%dT%H:%M:%S%z"))
-    say("THIS SERVER AND tempx/serve.py ARE UNRUN: this launch is their first execution against a "
+    say("=== resgate gated HTTP server, starting %s ===" % time.strftime("%Y-%m-%dT%H:%M:%S%z"))
+    say("THIS SERVER AND resgate/serve.py ARE UNRUN: this launch is their first execution against a "
         "real checkpoint. The startup block below is the evidence that the path works.")
     say("argv: %s" % json.dumps(vars(ARGS)))
     # Bind BEFORE the load. The likely thing on this port is another instance of this server, which

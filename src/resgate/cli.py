@@ -1,4 +1,4 @@
-"""tempx CLI: `tempx targets|capture|direction|patch`.
+"""resgate CLI: `resgate targets|capture|direction|patch`.
 
 Every option also reads the environment variable the original scripts used, so existing
 invocations (SRC DST DIRS K MODE KEEP ACTS OUT PROMPTS MODEL DEV DEVMAP MAXMEM BS SYS THINK)
@@ -18,7 +18,7 @@ def _env(name: str, default=None):
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(prog="tempx", description="sep(l) abliteration: four steps.")
+    p = argparse.ArgumentParser(prog="resgate", description="sep(l) abliteration: four steps.")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     t = sub.add_parser("targets", help="derive the target tensor set from a checkpoint")

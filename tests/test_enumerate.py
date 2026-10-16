@@ -8,7 +8,7 @@ from __future__ import annotations
 import pytest
 import torch
 
-from tempx.enumerate_targets import (EXCLUDE_PARTS, OUT_NAMES, enumerate_targets,
+from resgate.enumerate_targets import (EXCLUDE_PARTS, OUT_NAMES, enumerate_targets,
                                      format_report)
 from conftest import SHARD, SHARD2
 

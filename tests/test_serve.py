@@ -36,8 +36,8 @@ import threading
 import pytest
 import torch
 
-from tempx.gate import EDIT_LAYERS, GATE_LAYER, Gate, pool, user_span
-from tempx.serve import GateHealth, GatedModel, Reply, _stop_ids
+from resgate.gate import EDIT_LAYERS, GATE_LAYER, Gate, pool, user_span
+from resgate.serve import GateHealth, GatedModel, Reply, _stop_ids
 
 H, NL = 8, 17
 BAND = EDIT_LAYERS                                   # layers 10-16

@@ -16,7 +16,7 @@ alongside it.
 
 ### `orthogonalize_direction` is Heretic's, not ours
 
-`src/tempx/direction.py` contains a function of that name. It is **Heretic's design**, transcribed:
+`src/resgate/direction.py` contains a function of that name. It is **Heretic's design**, transcribed:
 given a candidate direction `d` and the **unit-normalised** mean harmless residual `ā_l`, it removes
 the component of `d` along that centroid and renormalises.
 
@@ -33,7 +33,7 @@ stable identifier and the line range as a hint.
 
 ### The update rule is Heretic's, and we verified that by reproducing their weights
 
-The rank-1 PRE row-normalised edit in `src/tempx/patch.py` —
+The rank-1 PRE row-normalised edit in `src/resgate/patch.py` —
 
 ```
 n = rownorm(W);  Ŵ = W / n
@@ -62,9 +62,9 @@ Heretic does not report anything like it.
 
 | component | where |
 |---|---|
-| The `sep(l)` per-layer weighting: `sep(l) = ‖h_l − ā_l‖ / mean_i‖g_i,l − ā_l‖`, normalised to mean 1, with `w = K · sep_l` | `src/tempx/direction.py`; `docs/METHOD.md` step 3 |
+| The `sep(l)` per-layer weighting: `sep(l) = ‖h_l − ā_l‖ / mean_i‖g_i,l − ā_l‖`, normalised to mean 1, with `w = K · sep_l` | `src/resgate/direction.py`; `docs/METHOD.md` step 3 |
 | The blind 5-prompt kit — 1 harmful + 4 harmless, no reference model and no held-out split | `kits/minimal.json`, `kits/README.md` |
-| Structural target enumeration applied across dense **and** MoE checkpoints from safetensors headers alone (Llama-3.1-8B 64, Qwen3.6-35B-A3B 120, Gemma-4-26B-A4B 90) | `src/tempx/enumerate_targets.py` |
+| Structural target enumeration applied across dense **and** MoE checkpoints from safetensors headers alone (Llama-3.1-8B 64, Qwen3.6-35B-A3B 120, Gemma-4-26B-A4B 90) | `src/resgate/enumerate_targets.py` |
 | The three-way REFUSED / DEFLECTED / COMPLIED evaluation | `eval/judge_threeway.py`, `docs/PITFALLS.md` §1 |
 | The dose and coverage findings — the ladder, `max\|dW\|` linearity in `K`, the plateau above K=1.5 on Gemma, the kit comparison at full vs partial dose | `docs/RESULTS.md` |
 
@@ -99,14 +99,14 @@ Two honest qualifications on that list:
 > `pyproject.toml` declares `license = "AGPL-3.0-or-later"` with the matching AGPLv3+ trove
 > classifier. RepIt *is* Apache-2.0 (quoted from its repo).
 
-**This repo is licensed AGPL-3.0-or-later (`LICENSE`), copyright "tempx contributors" — the same
+**This repo is licensed AGPL-3.0-or-later (`LICENSE`), copyright "resgate contributors" — the same
 licence as Heretic, chosen deliberately to match it.**
 
 - **`eval/keyword_rate.py` and `eval/kl.py` are derivatives of AGPL-3.0-or-later code.** Their own
   file headers say so. The marker list and matching rules in `keyword_rate.py` are *copied*,
   deliberately, because reproducing the metric exactly is the point. Matching Heretic's licence is
   what makes shipping them straightforward.
-- `src/tempx/direction.py` and `src/tempx/patch.py` reimplement two Heretic *components* — a
+- `src/resgate/direction.py` and `src/resgate/patch.py` reimplement two Heretic *components* — a
   function and an update rule — with credit, rather than vendoring Heretic's code. Whether that
   would have counted as sufficient separation under a permissive licence was never settled; under
   AGPL-3.0-or-later the question does not arise.

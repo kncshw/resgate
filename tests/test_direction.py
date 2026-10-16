@@ -18,7 +18,7 @@ import statistics as st
 import pytest
 import torch
 
-from tempx.direction import compute_directions, orthogonalize_direction, unit
+from resgate.direction import compute_directions, orthogonalize_direction, unit
 
 D = 4
 SEP0 = 3.0 * math.sqrt(2.0)
