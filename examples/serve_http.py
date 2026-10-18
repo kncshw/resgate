@@ -194,6 +194,9 @@ def parse_args(argv) -> argparse.Namespace:
     p.add_argument("--sys", default=CAPTURE_SYS, dest="sys_prompt",
                    help="system prompt. Part of the READ, not presentation: the default is the one "
                         "the direction and the span arithmetic were built with")
+    p.add_argument("--think", default=None,
+                   help="optional enable_thinking flag ('0' or '1') for models with reasoning chat "
+                        "templates such as Qwen3.6-35B-A3B")
     a = p.parse_args(argv)
     if isinstance(a.edit_layers, str):           # the default never goes through `type=`
         a.edit_layers = parse_band(a.edit_layers)
@@ -276,7 +279,7 @@ def load_model(a: argparse.Namespace):
         "(bfloat16, no device_map, .to('cuda')) -- about 270 s on k36, port opens after it")
     t0 = time.time()
     gm = GatedModel.load(a.model, a.dirs, a.op, K=a.K, edit_layers=a.edit_layers,
-                         sys_prompt=a.sys_prompt, verbose=True)
+                         sys_prompt=a.sys_prompt, think=a.think, verbose=True)
     say("load_seconds = %.1f" % (time.time() - t0))
 
     # --- placement. A15.2: an arm silently offloaded to disk and NOTHING in the record showed it.

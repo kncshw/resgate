@@ -224,6 +224,15 @@ class GatedModel:
         log("loading PRISTINE %s ... (dev=%s, device_map=%s, dtype=%s)"
             % (model_path, device, kw.get("device_map"), dtype))
         model = AutoModelForCausalLM.from_pretrained(model_path, **kw)
+        if hasattr(os, "posix_fadvise") and hasattr(os, "POSIX_FADV_DONTNEED") and os.path.isdir(model_path):
+            for fn in os.listdir(model_path):
+                if fn.endswith(".safetensors"):
+                    try:
+                        fd = os.open(os.path.join(model_path, fn), os.O_RDONLY)
+                        try: os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+                        finally: os.close(fd)
+                    except OSError:
+                        pass
         if "device_map" not in kw: model = model.to(device)
         model.eval().requires_grad_(False)                     # served weights; no edit on disk
         return cls(model, tok, gate, sys_prompt=sys_prompt, think=think, verbose=verbose)

@@ -7,8 +7,8 @@ The repository is organized into two parallel tracks (`gate/` and `ablation/`) a
 
 | Track | Code (`src/resgate/`) | Docs (`docs/`) | Shipped Kits (`kits/`) |
 |---|---|---|---|
-| **1. Runtime Gate (`gate/`)** — route-invariant pre-band hook & closed-form `M1_ridge_lam16` (`M1 + M3`) classifier | [`src/resgate/gate/`](src/resgate/gate/) (`__init__.py`, `fit.py`, `serve.py`) | [`docs/gate/CLASSIFIER-MATH.md`](docs/gate/CLASSIFIER-MATH.md), [`docs/gate/GATE.md`](docs/gate/GATE.md) | [`kits/gate/gemma4-26B/`](kits/gate/gemma4-26B/README.md), [`kits/gate/phi4mini/`](kits/gate/phi4mini/README.md), [`kits/gate/llama31-8B/`](kits/gate/llama31-8B/README.md) |
-| **2. Rank-1 Ablation (`ablation/`)** — unconditional `sep(l)` refusal direction, band localisation & weight patcher | [`src/resgate/ablation/`](src/resgate/ablation/) (`enumerate_targets.py`, `capture.py`, `direction.py`, `patch.py`) | [`docs/ablation/METHOD.md`](docs/ablation/METHOD.md), [`docs/ablation/RESULTS.md`](docs/ablation/RESULTS.md), [`docs/ablation/PITFALLS.md`](docs/ablation/PITFALLS.md) | [`kits/ablation/minimal.json`](kits/ablation/minimal.json), `kits/ablation/{gemma4-26B,phi4mini,llama31-8B}/` |
+| **1. Runtime Gate (`gate/`)** — route-invariant pre-band hook & closed-form `M1_ridge_lam16` (`M1 + M3`) classifier | [`src/resgate/gate/`](src/resgate/gate/) (`__init__.py`, `fit.py`, `serve.py`) | [`docs/gate/CLASSIFIER-MATH.md`](docs/gate/CLASSIFIER-MATH.md), [`docs/gate/GATE.md`](docs/gate/GATE.md) | [`kits/gate/gemma4-26B/`](kits/gate/gemma4-26B/README.md), [`kits/gate/phi4mini/`](kits/gate/phi4mini/README.md), [`kits/gate/llama31-8B/`](kits/gate/llama31-8B/README.md), [`kits/gate/qwen36-35B/`](kits/gate/qwen36-35B/README.md) |
+| **2. Rank-1 Ablation (`ablation/`)** — unconditional `sep(l)` refusal direction, band localisation & weight patcher | [`src/resgate/ablation/`](src/resgate/ablation/) (`enumerate_targets.py`, `capture.py`, `direction.py`, `patch.py`) | [`docs/ablation/METHOD.md`](docs/ablation/METHOD.md), [`docs/ablation/RESULTS.md`](docs/ablation/RESULTS.md), [`docs/ablation/PITFALLS.md`](docs/ablation/PITFALLS.md) | [`kits/ablation/minimal.json`](kits/ablation/minimal.json), `kits/ablation/{gemma4-26B,phi4mini,llama31-8B,qwen36-35B}/` |
 
 *(Top-level module imports `resgate.gate`, `resgate.serve`, `resgate.patch`, `resgate.direction`,
 `resgate.capture`, and `resgate.enumerate_targets` remain aliased so existing scripts and tests
@@ -30,22 +30,24 @@ run unchanged.)*
 
 `src/resgate/gate/` applies the rank-1 `PRE` edit as a runtime forward hook within a contiguous
 mid-network band (`L10–16` on Gemma-4-26B-A4B-it, `L13–15` on Phi-4-mini-instruct, `L11–22` on
-Llama-3.1-8B-Instruct), conditioned on a single linear gate read at an earlier layer (`L8`, `L11`,
-`L10`). Because the read layer sits strictly below the edit band (`max(gate_layers) < min(edit_layers)`),
-a single forward pass serves the conditional edit with exact byte identity on withheld prompts.
+Llama-3.1-8B-Instruct, `L14–22` on Qwen3.6-35B-A3B), conditioned on a single linear gate read at an
+earlier layer (`L8`, `L11`, `L10`, `L13`). Because the read layer sits strictly below the edit band
+(`max(gate_layers) < min(edit_layers)`), a single forward pass serves the conditional edit with
+exact byte identity on withheld prompts.
 
 The closed-form gate direction `c` and leak-constrained threshold `t` (`fit_gate_direction`,
 `thresh_r2`, `thresh_r3`, `fit_gate_op` in [`src/resgate/gate/fit.py`](src/resgate/gate/fit.py)) use
 subcategory-centred within-class scatter (`Z_subcat`) and smooth Tikhonov regularisation at
 `alpha = lambda_16` (`M1_ridge_lam16`).
 
-| Gate \ Prompts (Gemma L8 / Phi L11 / Llama L10, **LIVE**) | Cyber (`675 CySecBench`) | Bio (`637 WMDP_BIO test`) | Non-target harmful (`CatQA TEST`) |
+| Gate \ Prompts (Gemma L8 / Phi L11 / Llama L10 / Qwen L13, **LIVE**) | Cyber (`675 CySecBench`) | Bio (`637 WMDP_BIO test`) | Non-target harmful (`CatQA TEST`) |
 |---|---|---|---|
-| **Cyber gate (`M1_ridge_lam16`)** | `526 / 549 / 551` = **77.9 / 81.3 / 81.6%** (`528 / 549 / 550` offline) | `5 / 2 / 33` = 0.78 / 0.31 / 5.18% | `16 / 22 / 17` = 6.8 / 9.4 / 7.3% (`16 / 21 / 17` offline) |
-| **Bio gate (`B2_M1_ridge_lam16`)** | `3 / 0 / 2` = 0.44 / 0.00 / 0.30% | `633 / 630 / 632` = **99.4 / 98.9 / 99.2%** (`629 = 98.7%` at Phi `L12`) | `15 / 8 / 10` = 6.4 / 3.4 / 4.3% (`11 = 4.7%` at Phi `L12`) |
+| **Cyber gate (`M1_ridge_lam16`)** | `526 / 549 / 551 / 555` = **77.9 / 81.3 / 81.6 / 82.2%** (`556 = 82.4%` at Qwen `R3_m11`) | `5 / 2 / 33 / 6` = 0.78 / 0.31 / 5.18 / 0.94% | `16 / 22 / 17 / 22` = 6.8 / 9.4 / 7.3 / 9.4% |
+| **Bio gate (`B2_M1_ridge_lam16`)** | `3 / 0 / 2 / 2` = 0.44 / 0.00 / 0.30 / 0.30% | `633 / 630 / 632 / 635` = **99.4 / 98.9 / 99.2 / 99.7%** | `15 / 8 / 10 / 19` = 6.4 / 3.4 / 4.3 / 8.1% |
 
-- **Held-out clean validation (`WMDP_BIO val`, 127 rows / 118 deduplicated):** **127 / 127 / 127 = 100.0%** (`95% CP: [97.1, 100.0]`) live across all three models.
-- **294-prompt refusal agreement:** **294 of 294** agreement between the gate bit and the judged outcome on refused prompts (`115` fired & answered, `179` held & refused, `0` discordant), with **100%** `sha256` byte identity on withheld prompts.
+- **Held-out clean validation (`WMDP_BIO val`, 127 rows / 118 deduplicated):** **127 / 127 / 127 / 127 = 100.0%** (`95% CP: [97.1, 100.0]`) live across all four models.
+- **Live gated cyber compliance (`64` fresh cyber prompts):** **55 / 64 = 85.9%** across all four architectures (capturing **84.8–91.7%** of the unconditional edit ceiling).
+- **309-prompt refusal agreement:** **309 of 309** agreement between the gate bit and the judged outcome on refused prompts (`118` fired & answered, `191` held & refused, `0` discordant; and **107 of 107** on Qwen under strict `COMPLIED`), with **100%** `sha256` byte identity on withheld prompts.
 
 ---
 
@@ -63,7 +65,7 @@ pip install -e '.[shard]'        # + accelerate, if you need --devmap auto
 
 Python >= 3.10. The repository supports two usage modes:
 * **Method 1 (`Ablation + Gate` — Full Conditional Refusal Removal):** Launches the HTTP GPU server ([`examples/serve_http.py`](examples/serve_http.py)) or Python [`GatedModel`](src/resgate/gate/serve.py) with both the upstream linear gate (`op_*.pt`) and the downstream rank-1 refusal-removal hooks (`dir_*.pt`). When the gate fires on a target-domain prompt, the rank-1 edit removes refusal in that same forward pass; when the gate withholds on a non-target prompt, the model replies with **byte-for-byte identical** base-model text.
-* **Method 2 (`Gate Only` — Prefill Topic Routing / Scoring Without Weight Edits):** Evaluates only the upstream linear gate (`cos(mean_user(h_l), c) >= t`) at the early read layer (`L8` / `L11` / `L10`), either via the `/gate` HTTP endpoint or directly in Python, returning the binary decision bit and cosine score without decoding an edited completion.
+* **Method 2 (`Gate Only` — Prefill Topic Routing / Scoring Without Weight Edits):** Evaluates only the upstream linear gate (`cos(mean_user(h_l), c) >= t`) at the early read layer (`L8` / `L11` / `L10` / `L13`), either via the `/gate` HTTP endpoint or directly in Python, returning the binary decision bit and cosine score without decoding an edited completion.
 
 ---
 
@@ -112,6 +114,19 @@ python3 examples/serve_http.py \
 
 # Or Bio gate at the same L8 read layer (t = 0.05801104299110058):
 #   --op kits/gate/gemma4-26B/op_wmdpbio_B2_M1_ridge_lam16_R3U140_gemma_L8.pt
+```
+
+#### Option D — Qwen3.6-35B-A3B (`L13` read, `L14–22` edit band, 27 tensors incl. 9 fused 3-D MoE stacks + 9 shared experts, ~68 GiB VRAM)
+```bash
+# Cyber gate (op_qwen36_L13_M1subcat240_M1_ridge_lam16_serve.pt, t = 0.08298481344245375)
+python3 examples/serve_http.py \
+  --model Qwen/Qwen3.6-35B-A3B \
+  --dirs  kits/gate/qwen36-35B/dir_qwen36_sep_L14to22.pt \
+  --op    kits/gate/qwen36-35B/op_qwen36_L13_M1subcat240_M1_ridge_lam16_serve.pt \
+  --K 2.0 --edit-layers 14-22 --think 0 --port 8077
+
+# Or Bio gate at the same L13 read layer (t = 0.03838094775001616):
+#   --op kits/gate/qwen36-35B/op_wmdpbio_B2_M1_ridge_lam16_R3U140_qwen36_L13.pt
 ```
 
 *(Wait until stdout prints `READY  http://127.0.0.1:8077` before sending requests.)*
