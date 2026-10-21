@@ -1,5 +1,7 @@
 # ResGate
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/kncshw/resgate/blob/main/examples/ResGate_Colab_Quickstart.ipynb)
+
 **Closed-form pre-band runtime gating and search-free rank-1 refusal editing.**
 
 The repository is organized into two parallel tracks (`gate/` and `ablation/`) across `src/resgate/`,
@@ -15,6 +17,8 @@ The repository is organized into two parallel tracks (`gate/` and `ablation/`) a
 run unchanged.)*
 
 - **Paper draft (PDF):** [*ResGate: Topic-Scoped Refusal Removal via Single-Layer Residual Gating* (`paper/resgate.pdf`)](paper/resgate.pdf)
+- **Google Colab GPU quickstart:** [`examples/ResGate_Colab_Quickstart.ipynb`](examples/ResGate_Colab_Quickstart.ipynb)
+- **Training & evaluation datasets:** [`dataset/README.md`](dataset/README.md) (`1_train_direction/` and `2_evaluation/`)
 - **Verified PoC repository:** [`https://github.com/kncshw/resgate`](https://github.com/kncshw/resgate)
 - **Gate math & live GPU tables:** [`docs/gate/CLASSIFIER-MATH.md`](docs/gate/CLASSIFIER-MATH.md)
 - **Runtime hook & MoE reconstruction spec:** [`docs/gate/GATE.md`](docs/gate/GATE.md)

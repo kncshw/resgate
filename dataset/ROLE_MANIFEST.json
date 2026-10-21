@@ -1,0 +1,546 @@
+{
+  "description": "Role-organized prompt dataset hierarchy separating Direction Training/Fitting from Out-of-Corpus and In-Corpus Evaluation.",
+  "n_files": 54,
+  "files": [
+    {
+      "path": "1_train_direction/cyber_gate_fit240_seed0/pos_train_cyber_100.json",
+      "n_rows": 100,
+      "sha256": "78d1812b74efa215d508563f4f4af3dd91c9cd5472c31c006457c248789781f7",
+      "gate": "cyber_gate",
+      "role": "train_positive_direction",
+      "split_type": "in_fit_240 (R.TR, seed=0)",
+      "source": "pool681 DERIV cyber_offense",
+      "note": "100 positive cyber_offense prompts used to compute positive mean p and within-class scatter Z_pos"
+    },
+    {
+      "path": "1_train_direction/cyber_gate_fit240_seed0/neg_ref_14cats_140.json",
+      "n_rows": 140,
+      "sha256": "be342c164b902051471c2c3668fca7f804d6c8a080094f518aa8ef9c97ffadad",
+      "gate": "cyber_gate",
+      "role": "train_negative_direction_and_threshold_ref",
+      "split_type": "in_fit_240 (R.RF, seed=0)",
+      "source": "pool681 DERIV 14 non-target categories x 10 rows",
+      "note": "140 negative prompts (10 per category across 14 categories) used for negative mean g/mu_c, Z_neg, and R2/R3 threshold budget m"
+    },
+    {
+      "path": "1_train_direction/cyber_gate_fit240_seed0/by_negative_subcategory/cbrn_chem_bio_10.json",
+      "n_rows": 10,
+      "sha256": "9a2da530a80377258f2bba4885461de50ea94c4bb43ac0240ea6489da236390e",
+      "gate": "cyber_gate",
+      "role": "train_negative_subcategory",
+      "split_type": "in_fit_240 subcategory cbrn_chem_bio (10 rows, seed=0)",
+      "source": "pool681 DERIV category == cbrn_chem_bio",
+      "note": "10 negative rows for category 'cbrn_chem_bio' centered around its own mean mu_c in M1 (Z_subcat)"
+    },
+    {
+      "path": "1_train_direction/cyber_gate_fit240_seed0/by_negative_subcategory/critical_infrastructure_10.json",
+      "n_rows": 10,
+      "sha256": "1f501c43694cef2cabcecbc4c3e6ac1f6fd6010e9b29e7d2b80d58f4ee47c567",
+      "gate": "cyber_gate",
+      "role": "train_negative_subcategory",
+      "split_type": "in_fit_240 subcategory critical_infrastructure (10 rows, seed=0)",
+      "source": "pool681 DERIV category == critical_infrastructure",
+      "note": "10 negative rows for category 'critical_infrastructure' centered around its own mean mu_c in M1 (Z_subcat)"
+    },
+    {
+      "path": "1_train_direction/cyber_gate_fit240_seed0/by_negative_subcategory/drugs_10.json",
+      "n_rows": 10,
+      "sha256": "1d8492d8f50bf6c51e0cb11e4f76d44807e11c449c2114beac61e51ccc6798c4",
+      "gate": "cyber_gate",
+      "role": "train_negative_subcategory",
+      "split_type": "in_fit_240 subcategory drugs (10 rows, seed=0)",
+      "source": "pool681 DERIV category == drugs",
+      "note": "10 negative rows for category 'drugs' centered around its own mean mu_c in M1 (Z_subcat)"
+    },
+    {
+      "path": "1_train_direction/cyber_gate_fit240_seed0/by_negative_subcategory/evasion_lawenforcement_10.json",
+      "n_rows": 10,
+      "sha256": "291b3e18372011b17ad148cdbae21dfd6c359176a6c3589ddbb8a28d8da5d3cc",
+      "gate": "cyber_gate",
+      "role": "train_negative_subcategory",
+      "split_type": "in_fit_240 subcategory evasion_lawenforcement (10 rows, seed=0)",
+      "source": "pool681 DERIV category == evasion_lawenforcement",
+      "note": "10 negative rows for category 'evasion_lawenforcement' centered around its own mean mu_c in M1 (Z_subcat)"
+    },
+    {
+      "path": "1_train_direction/cyber_gate_fit240_seed0/by_negative_subcategory/fraud_financial_10.json",
+      "n_rows": 10,
+      "sha256": "05b33ff8922250eca2e98d72ad52e1d33a96a833a0c7a1c1eb2d223107074bf1",
+      "gate": "cyber_gate",
+      "role": "train_negative_subcategory",
+      "split_type": "in_fit_240 subcategory fraud_financial (10 rows, seed=0)",
+      "source": "pool681 DERIV category == fraud_financial",
+      "note": "10 negative rows for category 'fraud_financial' centered around its own mean mu_c in M1 (Z_subcat)"
+    },
+    {
+      "path": "1_train_direction/cyber_gate_fit240_seed0/by_negative_subcategory/hate_harassment_10.json",
+      "n_rows": 10,
+      "sha256": "de6e42bac39a839cb169833b856e5de2421ac6ac2b2f105142fbd73b78c50624",
+      "gate": "cyber_gate",
+      "role": "train_negative_subcategory",
+      "split_type": "in_fit_240 subcategory hate_harassment (10 rows, seed=0)",
+      "source": "pool681 DERIV category == hate_harassment",
+      "note": "10 negative rows for category 'hate_harassment' centered around its own mean mu_c in M1 (Z_subcat)"
+    },
+    {
+      "path": "1_train_direction/cyber_gate_fit240_seed0/by_negative_subcategory/human_trafficking_10.json",
+      "n_rows": 10,
+      "sha256": "15a338d9dc7d3236824058191fe51d11dc34690676cae92fb1ff3c5b5d8bc513",
+      "gate": "cyber_gate",
+      "role": "train_negative_subcategory",
+      "split_type": "in_fit_240 subcategory human_trafficking (10 rows, seed=0)",
+      "source": "pool681 DERIV category == human_trafficking",
+      "note": "10 negative rows for category 'human_trafficking' centered around its own mean mu_c in M1 (Z_subcat)"
+    },
+    {
+      "path": "1_train_direction/cyber_gate_fit240_seed0/by_negative_subcategory/influence_ops_disinfo_10.json",
+      "n_rows": 10,
+      "sha256": "c1b98f274cf3eb61e17723aacaa269142749e36dcd27240e147ff13c7ee9f816",
+      "gate": "cyber_gate",
+      "role": "train_negative_subcategory",
+      "split_type": "in_fit_240 subcategory influence_ops_disinfo (10 rows, seed=0)",
+      "source": "pool681 DERIV category == influence_ops_disinfo",
+      "note": "10 negative rows for category 'influence_ops_disinfo' centered around its own mean mu_c in M1 (Z_subcat)"
+    },
+    {
+      "path": "1_train_direction/cyber_gate_fit240_seed0/by_negative_subcategory/other_10.json",
+      "n_rows": 10,
+      "sha256": "68baee7e489ec8cd5c5f5f886f1568d2006cf06c80bfff25cbe2cae47a7d06bc",
+      "gate": "cyber_gate",
+      "role": "train_negative_subcategory",
+      "split_type": "in_fit_240 subcategory other (10 rows, seed=0)",
+      "source": "pool681 DERIV category == other",
+      "note": "10 negative rows for category 'other' centered around its own mean mu_c in M1 (Z_subcat)"
+    },
+    {
+      "path": "1_train_direction/cyber_gate_fit240_seed0/by_negative_subcategory/selfharm_eating_10.json",
+      "n_rows": 10,
+      "sha256": "a21da34ab73cf5b96f7444e390682ca89eed76dcdb5edb5f831bed4d670b3502",
+      "gate": "cyber_gate",
+      "role": "train_negative_subcategory",
+      "split_type": "in_fit_240 subcategory selfharm_eating (10 rows, seed=0)",
+      "source": "pool681 DERIV category == selfharm_eating",
+      "note": "10 negative rows for category 'selfharm_eating' centered around its own mean mu_c in M1 (Z_subcat)"
+    },
+    {
+      "path": "1_train_direction/cyber_gate_fit240_seed0/by_negative_subcategory/sexual_exploitation_10.json",
+      "n_rows": 10,
+      "sha256": "f7371a652a917e6be7da77d74c4b863b334bb79c7a611b61191db58627fffd34",
+      "gate": "cyber_gate",
+      "role": "train_negative_subcategory",
+      "split_type": "in_fit_240 subcategory sexual_exploitation (10 rows, seed=0)",
+      "source": "pool681 DERIV category == sexual_exploitation",
+      "note": "10 negative rows for category 'sexual_exploitation' centered around its own mean mu_c in M1 (Z_subcat)"
+    },
+    {
+      "path": "1_train_direction/cyber_gate_fit240_seed0/by_negative_subcategory/surveillance_stalking_10.json",
+      "n_rows": 10,
+      "sha256": "d77888f04131d029f6c8fa7f6f821d82c28514e349f13cb2ffbe120cee054efd",
+      "gate": "cyber_gate",
+      "role": "train_negative_subcategory",
+      "split_type": "in_fit_240 subcategory surveillance_stalking (10 rows, seed=0)",
+      "source": "pool681 DERIV category == surveillance_stalking",
+      "note": "10 negative rows for category 'surveillance_stalking' centered around its own mean mu_c in M1 (Z_subcat)"
+    },
+    {
+      "path": "1_train_direction/cyber_gate_fit240_seed0/by_negative_subcategory/violence_physical_10.json",
+      "n_rows": 10,
+      "sha256": "258b6e509fe394cee6cbd6e9e6ab546ddd8a96ba9428779a340d75a28361dc1f",
+      "gate": "cyber_gate",
+      "role": "train_negative_subcategory",
+      "split_type": "in_fit_240 subcategory violence_physical (10 rows, seed=0)",
+      "source": "pool681 DERIV category == violence_physical",
+      "note": "10 negative rows for category 'violence_physical' centered around its own mean mu_c in M1 (Z_subcat)"
+    },
+    {
+      "path": "1_train_direction/cyber_gate_fit240_seed0/by_negative_subcategory/weapons_explosives_10.json",
+      "n_rows": 10,
+      "sha256": "dd09a3dd379f9d7dadce507fdd37a61354b92b44c8ac451549a31a1e4ba65c92",
+      "gate": "cyber_gate",
+      "role": "train_negative_subcategory",
+      "split_type": "in_fit_240 subcategory weapons_explosives (10 rows, seed=0)",
+      "source": "pool681 DERIV category == weapons_explosives",
+      "note": "10 negative rows for category 'weapons_explosives' centered around its own mean mu_c in M1 (Z_subcat)"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/pass_rate_targets/incorpus_cyber_holdout_74.json",
+      "n_rows": 74,
+      "sha256": "169f9983f45f4ade2ce6967827a89a306fca45a83fd8c2411c8030249ece0f3b",
+      "gate": "cyber_gate",
+      "role": "eval_pass_rate_target (in-corpus holdout)",
+      "split_type": "in_corpus_holdout (R.TE, seed=0)",
+      "source": "pool681 DERIV cyber_offense holdout (174 - 100 = 74)",
+      "note": "74 in-corpus cyber_offense rows held out from the 240-row fit at seed=0"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/leakage_nontargets/incorpus_nontarget_leak_378.json",
+      "n_rows": 378,
+      "sha256": "15890f5e904b1b3889cf3a3fd3675806ed50e0d8cfd00ab7a8cf6d5d84795bd3",
+      "gate": "cyber_gate",
+      "role": "eval_leakage_nontarget (in-corpus holdout)",
+      "split_type": "in_corpus_holdout (R.LK, seed=0)",
+      "source": "pool681 DERIV non-target holdout (518 - 140 = 378)",
+      "note": "378 in-corpus non-target harmful rows across 14 categories held out from the 240-row fit at seed=0"
+    },
+    {
+      "path": "1_train_direction/bio_gate_B2_fit/pos_train_wmdp_bio_508.json",
+      "n_rows": 508,
+      "sha256": "51d0e90f2e0ff7193841bc2327e3fba998957c2238bd43ec56fcd6e98c7770b9",
+      "gate": "bio_gate_B2",
+      "role": "train_positive_direction",
+      "split_type": "in_fit_bio (508 rows)",
+      "source": "WMDP Bio train (wmd_bio_harmful_train.json)",
+      "note": "508 positive bio prompts used to fit the B2 bio direction"
+    },
+    {
+      "path": "1_train_direction/bio_gate_B2_fit/neg_train_wmdp_cyber_509.json",
+      "n_rows": 509,
+      "sha256": "296b86c6d08e04b3022909b1e62909261bb99138692acc5712bef83146309430",
+      "gate": "bio_gate_B2",
+      "role": "train_negative_direction_and_ref",
+      "split_type": "in_fit_bio_neg (509 rows: 403 REST_B + 106 REF_B)",
+      "source": "WMDP Cyber train (wmd_cyber_harmful_train.json)",
+      "note": "Used as negative control for the Bio Gate ONLY (never used in Cyber Gate training)"
+    },
+    {
+      "path": "1_train_direction/bio_gate_B2_fit/neg_train_wmdp_chem_162.json",
+      "n_rows": 162,
+      "sha256": "ea2570ed375051f9e788c4d12660dd3512fd50de81870242286d4fb5e8a94997",
+      "gate": "bio_gate_B2",
+      "role": "train_negative_direction_and_ref",
+      "split_type": "in_fit_bio_neg (162 rows: 128 REST_B + 34 REF_B)",
+      "source": "WMDP Chem train (wmd_chem_harmful_train.json)",
+      "note": "Used as negative control for the Bio Gate ONLY"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/pass_rate_targets/cysecbench_test_675_gemma_llama.json",
+      "n_rows": 675,
+      "sha256": "ff9b5a495017ed568f0d03c8071ac47006a785203c0633f851ed3d0bfeef25da",
+      "gate": "cyber_gate",
+      "role": "eval_pass_rate_target (primary OOC)",
+      "split_type": "OOC_TEST (Gemma & Llama partition, seed=20261006, 675 rows)",
+      "source": "CySecBench (fresh_gate_in.json group=='fresh_cyber' & TEST)",
+      "note": "Primary 675-row Out-Of-Corpus CySecBench TEST set for Gemma and Llama"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/pass_rate_targets/cysecbench_test_675_phi.json",
+      "n_rows": 675,
+      "sha256": "3d3c0d94ae271deef189320ddbe7a26b9cfcb33ea661c8d34102e958d0dabd3e",
+      "gate": "cyber_gate",
+      "role": "eval_pass_rate_target (primary OOC)",
+      "split_type": "OOC_TEST (Phi partition, seed=20261006, 675 rows)",
+      "source": "CySecBench (fresh_gate_in.json group=='fresh_cyber' & TEST)",
+      "note": "Primary 675-row Out-Of-Corpus CySecBench TEST set for Phi-4-mini"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/pass_rate_targets/cysecbench_val_675_gemma_llama.json",
+      "n_rows": 675,
+      "sha256": "d2d4130c3bff77cfc23375f2cb27961425e497855925fd17fdccd4cabef63cbb",
+      "gate": "cyber_gate",
+      "role": "eval_pass_rate_target (OOC VAL half, unused in M1/M3 fit)",
+      "split_type": "OOC_VAL (Gemma & Llama partition, seed=20261006, 675 rows)",
+      "source": "CySecBench (fresh_gate_in.json group=='fresh_cyber' & VAL)",
+      "note": "675-row CySecBench VAL half for Gemma and Llama (disjoint from TEST; never used in M1/M3 fit)"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/pass_rate_targets/cysecbench_val_675_phi.json",
+      "n_rows": 675,
+      "sha256": "0ae8333ebb01457839413993605ab7915d3e1e1a5a7d94866da88263f8b28ca5",
+      "gate": "cyber_gate",
+      "role": "eval_pass_rate_target (OOC VAL half, unused in M1/M3 fit)",
+      "split_type": "OOC_VAL (Phi partition, seed=20261006, 675 rows)",
+      "source": "CySecBench (fresh_gate_in.json group=='fresh_cyber' & VAL)",
+      "note": "675-row CySecBench VAL half for Phi (disjoint from TEST; never used in M1/M3 fit)"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/pass_rate_targets/cysecbench_full_1350.json",
+      "n_rows": 1350,
+      "sha256": "77443a48d406503607159a4acce02ff0372b1de3e8cf23074306ed389649bab2",
+      "gate": "cyber_gate",
+      "role": "eval_pass_rate_target (full OOC CySecBench)",
+      "split_type": "OOC_FULL (VAL 675 + TEST 675 = 1350 rows)",
+      "source": "CySecBench (fresh_gate_in.json group=='fresh_cyber')",
+      "note": "All 1,350 CySecBench prompts (union of VAL 675 and TEST 675)"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/leakage_nontargets/catqa_test_234_gemma_llama.json",
+      "n_rows": 234,
+      "sha256": "539ceb1a9f802adabd3032025a065a3534bf185da3348940b8c0caa13f4d3de6",
+      "gate": "cyber_gate & bio_gate",
+      "role": "eval_leakage_nontarget (primary OOC)",
+      "split_type": "OOC_TEST (Gemma & Llama partition, 234 rows)",
+      "source": "CatQA (fresh_gate_in.json group=='fresh_nontarget' & TEST)",
+      "note": "Primary 234-row Out-Of-Corpus CatQA non-target harmful leak surface for Gemma and Llama"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/leakage_nontargets/catqa_test_235_phi.json",
+      "n_rows": 235,
+      "sha256": "162a4ecf14e935419ee7c69fcd701ad02547f1becc18e1ad2595368158114766",
+      "gate": "cyber_gate & bio_gate",
+      "role": "eval_leakage_nontarget (primary OOC)",
+      "split_type": "OOC_TEST (Phi partition, 235 rows)",
+      "source": "CatQA (fresh_gate_in.json group=='fresh_nontarget' & TEST)",
+      "note": "Primary 235-row Out-Of-Corpus CatQA non-target harmful leak surface for Phi-4-mini"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/leakage_nontargets/catqa_val_235_gemma_llama.json",
+      "n_rows": 235,
+      "sha256": "cd9e3de27f646abd10716267f199994b2ba7a68fd55936ada9617382d20c32bb",
+      "gate": "cyber_gate & bio_gate",
+      "role": "eval_leakage_nontarget (OOC VAL half)",
+      "split_type": "OOC_VAL (Gemma & Llama partition, 235 rows)",
+      "source": "CatQA (fresh_gate_in.json group=='fresh_nontarget' & VAL)",
+      "note": "235-row CatQA VAL half for Gemma and Llama"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/leakage_nontargets/catqa_val_234_phi.json",
+      "n_rows": 234,
+      "sha256": "ed19ddda617cb2ba75261896b54b82df729d92e2880764967ed03433e9a4d313",
+      "gate": "cyber_gate & bio_gate",
+      "role": "eval_leakage_nontarget (OOC VAL half)",
+      "split_type": "OOC_VAL (Phi partition, 234 rows)",
+      "source": "CatQA (fresh_gate_in.json group=='fresh_nontarget' & VAL)",
+      "note": "234-row CatQA VAL half for Phi-4-mini"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/leakage_nontargets/catqa_full_469.json",
+      "n_rows": 469,
+      "sha256": "d6c300117659c6e3c0fa1d542b9dd7dcc34d4ffe91ad2e69fc11b770aee855a3",
+      "gate": "cyber_gate & bio_gate",
+      "role": "eval_leakage_nontarget (full OOC CatQA)",
+      "split_type": "OOC_FULL (469 rows across 10 non-cyber/non-bio harm categories)",
+      "source": "CatQA (fresh_gate_in.json group=='fresh_nontarget')",
+      "note": "All 469 non-target harmful CatQA prompts"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/pass_rate_targets/wmdp_cyber_test_637.json",
+      "n_rows": 637,
+      "sha256": "2baaccc91244116cfc6ac61e21f1fdf16e42d596f970019d38a93ce879d78f30",
+      "gate": "cyber_gate",
+      "role": "eval_pass_rate_target (cross-collection OOC)",
+      "split_type": "OOC_TEST (637 rows)",
+      "source": "WMDP Cyber test (wmd_cyber_harmful_test.json)",
+      "note": "Primary 637-row cross-collection WMDP Cyber test benchmark"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/pass_rate_targets/wmdp_cyber_train_509_unseen_by_cyber_gate.json",
+      "n_rows": 509,
+      "sha256": "296b86c6d08e04b3022909b1e62909261bb99138692acc5712bef83146309430",
+      "gate": "cyber_gate",
+      "role": "eval_pass_rate_target (additional unseen OOC cyber split)",
+      "split_type": "OOC_EXTRA (509 rows)",
+      "source": "WMDP Cyber train (wmd_cyber_harmful_train.json)",
+      "note": "509 WMDP Cyber prompts never seen by the Cyber Gate (only used as negative control in Bio Gate B2)"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/pass_rate_targets/wmdp_cyber_val_127.json",
+      "n_rows": 127,
+      "sha256": "19d550fed72362bfef1f01e71ac0980ac126e3105713a9d6e8aea25569e7d9c4",
+      "gate": "cyber_gate",
+      "role": "eval_pass_rate_target (additional unseen OOC cyber split)",
+      "split_type": "OOC_EXTRA (127 rows)",
+      "source": "WMDP Cyber val (wmd_cyber_harmful_val.json)",
+      "note": "127 WMDP Cyber validation prompts never seen by either gate"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/leakage_nontargets/wmdp_bio_test_637.json",
+      "n_rows": 637,
+      "sha256": "c5c8e2eaa92122f4c87f3c7a5d290131f247aeb0e028ad58c9e3e43aabbe87da",
+      "gate": "cyber_gate",
+      "role": "eval_leakage_nontarget (off-target bio leak surface)",
+      "split_type": "OOC_TEST (637 rows)",
+      "source": "WMDP Bio test (wmd_bio_harmful_test.json)",
+      "note": "Primary 637-row off-target WMDP Bio leak check for the Cyber Gate"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/leakage_nontargets/wmdp_chem_test_205.json",
+      "n_rows": 205,
+      "sha256": "3d001a74e7e3faf5f3eb29753ec4496979028a49c71f5bf3f6b06057e0bdd4ca",
+      "gate": "cyber_gate & bio_gate",
+      "role": "eval_leakage_nontarget (off-target chem leak surface)",
+      "split_type": "OOC_TEST (205 rows)",
+      "source": "WMDP Chem test (wmd_chem_harmful_test.json)",
+      "note": "205-row WMDP Chem test leak surface"
+    },
+    {
+      "path": "2_evaluation/bio_gate_eval/pass_rate_targets/wmdp_bio_test_637.json",
+      "n_rows": 637,
+      "sha256": "c5c8e2eaa92122f4c87f3c7a5d290131f247aeb0e028ad58c9e3e43aabbe87da",
+      "gate": "bio_gate_B2",
+      "role": "eval_pass_rate_target (primary bio test set)",
+      "split_type": "OOC_TEST (637 rows)",
+      "source": "WMDP Bio test (wmd_bio_harmful_test.json)",
+      "note": "Primary 637-row WMDP Bio test target for the Bio Gate"
+    },
+    {
+      "path": "2_evaluation/bio_gate_eval/pass_rate_targets/wmdp_bio_val_127.json",
+      "n_rows": 127,
+      "sha256": "00d495082fd5e9b635a010888d1b482b07617aefe8ce7d829e5ffb089b049a81",
+      "gate": "bio_gate_B2",
+      "role": "eval_pass_rate_target (bio val set)",
+      "split_type": "OOC_VAL (127 rows)",
+      "source": "WMDP Bio val (wmd_bio_harmful_val.json)",
+      "note": "127-row WMDP Bio val set (never used in B2 fit)"
+    },
+    {
+      "path": "2_evaluation/bio_gate_eval/leakage_nontargets/wmdp_cyber_test_637.json",
+      "n_rows": 637,
+      "sha256": "2baaccc91244116cfc6ac61e21f1fdf16e42d596f970019d38a93ce879d78f30",
+      "gate": "bio_gate_B2",
+      "role": "eval_leakage_nontarget (off-target cyber leak surface)",
+      "split_type": "OOC_TEST (637 rows)",
+      "source": "WMDP Cyber test (wmd_cyber_harmful_test.json)",
+      "note": "637-row WMDP Cyber test leak surface for the Bio Gate"
+    },
+    {
+      "path": "2_evaluation/bio_gate_eval/leakage_nontargets/wmdp_chem_test_205.json",
+      "n_rows": 205,
+      "sha256": "3d001a74e7e3faf5f3eb29753ec4496979028a49c71f5bf3f6b06057e0bdd4ca",
+      "gate": "bio_gate_B2",
+      "role": "eval_leakage_nontarget (off-target chem leak surface)",
+      "split_type": "OOC_TEST (205 rows)",
+      "source": "WMDP Chem test (wmd_chem_harmful_test.json)",
+      "note": "205-row WMDP Chem test leak surface for the Bio Gate"
+    },
+    {
+      "path": "2_evaluation/bio_gate_eval/leakage_nontargets/wmdp_chem_val_40.json",
+      "n_rows": 40,
+      "sha256": "51466692c1500c2c5f069c7868df6e31d8010f99e9d0eb7c289b815b74e78f36",
+      "gate": "bio_gate_B2",
+      "role": "eval_leakage_nontarget (off-target chem val surface)",
+      "split_type": "OOC_VAL (40 rows)",
+      "source": "WMDP Chem val (wmd_chem_harmful_val.json)",
+      "note": "40-row WMDP Chem val set"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/leakage_nontargets/sosbench_bio_498.json",
+      "n_rows": 498,
+      "sha256": "f7f21064e4006614e572a7c03cfb31cd20d2ee45ee9a8e07a356775fec2b951c",
+      "gate": "cyber_gate",
+      "role": "eval_leakage_nontarget (off-target CBRN leak surface)",
+      "split_type": "OOC_LEAK (498 rows)",
+      "source": "bio_eval_in.json source_id=='sosbench_bio'",
+      "note": "SOSBench biology (498 rows) -- off-target bio leak surface for Cyber Gate"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/leakage_nontargets/alert_weapon_bio_205.json",
+      "n_rows": 205,
+      "sha256": "46917230058ce952516e47341e9d2e2aa86fe5442825402daeb88da2e0e3cb80",
+      "gate": "cyber_gate",
+      "role": "eval_leakage_nontarget (off-target CBRN leak surface)",
+      "split_type": "OOC_LEAK (205 rows)",
+      "source": "bio_eval_in.json source_id=='alert_weapon_bio'",
+      "note": "ALERT weapon_biological (205 rows) -- off-target bio leak surface for Cyber Gate"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/leakage_nontargets/alert_weapon_chem_212.json",
+      "n_rows": 212,
+      "sha256": "4c97ea6c57cce26a9ac2b596001354b1a373b5b0aa52b03c3255017e8a3af025",
+      "gate": "cyber_gate",
+      "role": "eval_leakage_nontarget (off-target CBRN leak surface)",
+      "split_type": "OOC_LEAK (212 rows)",
+      "source": "bio_eval_in.json source_id=='alert_weapon_chem'",
+      "note": "ALERT weapon_chemical (212 rows) -- off-target chem leak surface for Cyber Gate"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/leakage_nontargets/alert_weapon_radio_157.json",
+      "n_rows": 157,
+      "sha256": "7f599eb740129886c1b7d6c8df7ac268fd968694e56b2fed790b4770b6d7a68a",
+      "gate": "cyber_gate",
+      "role": "eval_leakage_nontarget (off-target CBRN leak surface)",
+      "split_type": "OOC_LEAK (157 rows)",
+      "source": "bio_eval_in.json source_id=='alert_weapon_radio'",
+      "note": "ALERT weapon_radiological (157 rows) -- off-target radiological leak surface for Cyber Gate"
+    },
+    {
+      "path": "2_evaluation/cyber_gate_eval/dropped_benchmarks/pku_cybercrime_612_DROPPED_general_crime.json",
+      "n_rows": 612,
+      "sha256": "ae22041ba7b87c382f19c3a4f70dd33e37151981e48d7aaa02690c2b98640021",
+      "gate": "cyber_gate (DROPPED)",
+      "role": "DROPPED_FROM_CYBER_PASS_RATE (general crime/fraud/scams, not technical cyber offense)",
+      "split_type": "DROPPED (612 rows)",
+      "source": "PKU-SafeRLHF response_*_harm_category['Cybercrime'] (bio_eval_in.json)",
+      "note": "Originally added as a non-bio leak control for the Bio Gate. Dropped as a Cyber Gate pass-rate benchmark because most prompts are general crime, online scams, fraud, privacy, or piracy (which belong to the Cyber Gate's 14 negative REF categories)."
+    },
+    {
+      "path": "2_evaluation/bio_gate_eval/pass_rate_targets/sosbench_bio_498.json",
+      "n_rows": 498,
+      "sha256": "f7f21064e4006614e572a7c03cfb31cd20d2ee45ee9a8e07a356775fec2b951c",
+      "gate": "bio_gate_B2",
+      "role": "eval_pass_rate_target (cross-collection bio)",
+      "split_type": "OOC_TARGET (498 rows)",
+      "source": "bio_eval_in.json source_id=='sosbench_bio'",
+      "note": "SOSBench biology (498 rows) -- primary cross-collection bio pass-rate target"
+    },
+    {
+      "path": "2_evaluation/bio_gate_eval/pass_rate_targets/alert_weapon_bio_205.json",
+      "n_rows": 205,
+      "sha256": "46917230058ce952516e47341e9d2e2aa86fe5442825402daeb88da2e0e3cb80",
+      "gate": "bio_gate_B2",
+      "role": "eval_pass_rate_target (cross-collection bio)",
+      "split_type": "OOC_TARGET (205 rows)",
+      "source": "bio_eval_in.json source_id=='alert_weapon_bio'",
+      "note": "ALERT weapon_biological (205 rows) -- primary short imperative bio pass-rate target"
+    },
+    {
+      "path": "2_evaluation/bio_gate_eval/pass_rate_targets/salad_o39_197.json",
+      "n_rows": 197,
+      "sha256": "217c00026ad58c6e12bdd83d89c3d4b4c3452862aae561f2ae38decfc6a3dda9",
+      "gate": "bio_gate_B2",
+      "role": "eval_pass_rate_target (cross-collection bio)",
+      "split_type": "OOC_TARGET (197 rows)",
+      "source": "bio_eval_in.json source_id=='salad_o39'",
+      "note": "SALAD-Bench O39 Biological & Chemical Harms (197 rows) -- mixed bio/chem coverage"
+    },
+    {
+      "path": "2_evaluation/bio_gate_eval/pass_rate_targets/harmbench_chembio_28.json",
+      "n_rows": 28,
+      "sha256": "da7765172fc4096fda550acfd34f18170fdb3a804d5cd6e20de94c744969002c",
+      "gate": "bio_gate_B2",
+      "role": "eval_pass_rate_target (cross-collection bio)",
+      "split_type": "OOC_TARGET (28 rows)",
+      "source": "bio_eval_in.json source_id=='harmbench_chembio'",
+      "note": "HarmBench chemical_biological (28 rows) -- mixed bio/chem coverage"
+    },
+    {
+      "path": "2_evaluation/bio_gate_eval/leakage_nontargets/pku_cybercrime_612.json",
+      "n_rows": 612,
+      "sha256": "ae22041ba7b87c382f19c3a4f70dd33e37151981e48d7aaa02690c2b98640021",
+      "gate": "bio_gate_B2",
+      "role": "eval_leakage_nontarget (non-bio control)",
+      "split_type": "OOC_LEAK (612 rows)",
+      "source": "bio_eval_in.json source_id=='pku_cybercrime'",
+      "note": "PKU-SafeRLHF Cybercrime (612 rows, 98.5% '?') -- register-matched non-bio leak control for Bio Gate"
+    },
+    {
+      "path": "2_evaluation/bio_gate_eval/leakage_nontargets/alert_weapon_chem_212.json",
+      "n_rows": 212,
+      "sha256": "4c97ea6c57cce26a9ac2b596001354b1a373b5b0aa52b03c3255017e8a3af025",
+      "gate": "bio_gate_B2",
+      "role": "eval_leakage_nontarget (non-bio control)",
+      "split_type": "OOC_LEAK (212 rows)",
+      "source": "bio_eval_in.json source_id=='alert_weapon_chem'",
+      "note": "ALERT weapon_chemical (212 rows) -- chemical weapon leak control for Bio Gate"
+    },
+    {
+      "path": "2_evaluation/bio_gate_eval/leakage_nontargets/alert_weapon_radio_157.json",
+      "n_rows": 157,
+      "sha256": "7f599eb740129886c1b7d6c8df7ac268fd968694e56b2fed790b4770b6d7a68a",
+      "gate": "bio_gate_B2",
+      "role": "eval_leakage_nontarget (non-bio control)",
+      "split_type": "OOC_LEAK (157 rows)",
+      "source": "bio_eval_in.json source_id=='alert_weapon_radio'",
+      "note": "ALERT weapon_radiological (157 rows) -- adjacent CBRN control for Bio Gate"
+    },
+    {
+      "path": "2_evaluation/bio_gate_eval/leakage_nontargets/ailuminate_iwp_100.json",
+      "n_rows": 100,
+      "sha256": "0cf51e277c469395efc28ee04c778f3b515f396a74f4627eae8e3d889d5ab00f",
+      "gate": "bio_gate_B2",
+      "role": "eval_leakage_nontarget (non-bio control)",
+      "split_type": "OOC_LEAK (100 rows)",
+      "source": "bio_eval_in.json source_id=='ailuminate_iwp'",
+      "note": "AILuminate Indiscriminate Weapons CBRNE (100 rows) -- adjacent CBRNE control for Bio Gate"
+    }
+  ]
+}
