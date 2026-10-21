@@ -899,4 +899,9 @@ from .fit import (  # noqa: E402
     thresh_r2,
     thresh_r3,
 )
+from .serve import (  # noqa: E402
+    GateHealth,
+    GatedModel,
+    Reply,
+)
 
